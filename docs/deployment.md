@@ -1,7 +1,7 @@
 # Deployment
 
-This describes how to run ToolLayer AI **locally**. It is not a production deployment guide,
-and section 8 says why.
+This describes how to run ToolLayer AI **locally**. It is not a production deployment guide;
+section 10 records exactly what has been verified, and section 11 says what is missing.
 
 ## 1. Requirements
 
@@ -153,7 +153,33 @@ administrator publishes and snapshots → the runtime's next refresh → `/ready
 
 Service logs from `make demo` land in `.demo-logs/`.
 
-## 10. Production limitations
+## 10. Verification status
+
+Being precise about this matters more than sounding finished.
+
+| Path | Status |
+|---|---|
+| `make setup` on a clean clone | **Verified** — Python 3.11 and 3.12 |
+| `make test` (180 tests) | **Verified** — clean clone and CI |
+| `make lint`, `make typecheck` | **Verified** |
+| `make demo` (three services, full flow) | **Verified** — default and overridden ports |
+| `make capture` (Playwright asset capture) | **Verified** |
+| Docker image build | **Not executed here.** Statically reviewed: every `COPY` path exists, the entry points match the applications, the ports match this document |
+| `docker compose up` end to end | **Not executed here.** The topology parses, service names and health checks are consistent, and the runtime's allowlist names the demo API's service by exact origin |
+
+The Docker path is *provided*, not *proven*. A Docker daemon was unavailable in the
+environment this repository was developed in, so the honest statement is that the packaging is
+included and reviewed rather than that a container deployment has been demonstrated.
+
+To validate it yourself:
+
+```bash
+docker compose up -d --build
+make demo-docker
+docker compose down -v
+```
+
+## 11. Production limitations
 
 **This topology is not production-ready, and the gaps are specific:**
 

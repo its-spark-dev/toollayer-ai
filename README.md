@@ -178,6 +178,12 @@ docker compose up -d --build && make demo-docker
 
 Then open the console at <http://localhost:5173>.
 
+> **What has been verified.** The local path above — `make setup`, `make test`, `make demo`,
+> `make capture` — is exercised from a clean clone and in CI. The Docker Compose topology is
+> provided and statically reviewed, but container execution has not been independently
+> validated in the environment this repository was built in. `docs/deployment.md` §11 records
+> exactly what that review covered.
+
 ### The pipeline, end to end
 
 Every image below is produced by `make capture`, which drives the running application with

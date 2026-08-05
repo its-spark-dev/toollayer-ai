@@ -62,8 +62,12 @@ format: ## Apply formatting and safe lint fixes
 typecheck: ## Run strict type checking
 	$(BIN)/mypy packages apps
 
+.PHONY: check-docs
+check-docs: ## Verify the documentation still describes the code
+	$(BIN)/python scripts/check_docs.py
+
 .PHONY: check
-check: lint typecheck test ## Everything CI runs
+check: lint typecheck test check-docs ## Everything CI runs
 
 .PHONY: run-demo-api
 run-demo-api: ## Start the synthetic Support API

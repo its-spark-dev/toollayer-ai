@@ -233,6 +233,10 @@ A fresh `git clone` of the branch into an empty directory:
 **Remaining human step:** run `docker compose up -d --build && make demo-docker` on a machine
 with Docker and confirm it completes.
 
+The README and `docs/deployment.md` §10 both state this plainly: the Docker path is *provided
+and statically reviewed*, not *executed and proven*. No claim of a verified container
+deployment appears anywhere in the repository.
+
 ## 12. Documentation consistency
 
 | Check | Result |

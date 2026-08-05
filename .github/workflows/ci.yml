@@ -44,6 +44,9 @@ jobs:
       - name: Test
         run: pytest tests -v
 
+      - name: Documentation matches the code
+        run: python scripts/check_docs.py
+
       - name: Verify the security controls specifically
         # Called out as its own step so a failure here is visibly a *security* regression in
         # the run summary, not one line inside a long test log.
@@ -70,6 +73,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run test -- --run
       - run: npm run build
+
+      - name: Every Mermaid diagram parses
+        # Diagrams that fail to parse render as an error box on GitHub, which is invisible in
+        # a normal test run. Parsing them needs a JavaScript runtime, so the check lives here.
+        run: npm run check:diagrams
 
   demo:
     name: End-to-end demo

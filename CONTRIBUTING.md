@@ -7,9 +7,20 @@ make the *engineering* clearer, not only add features.
 
 ```bash
 make setup
-make check    # lint + typecheck + test — exactly what CI runs
+make check    # lint + typecheck + test + docs — exactly what CI runs
 make demo     # the full flow against real services
 ```
+
+Two gates are easy to miss because they are not tests:
+
+```bash
+make check-docs                                        # links, paths, named tests, counts
+npm --prefix apps/control-plane/frontend run check:diagrams   # every Mermaid diagram parses
+```
+
+The first exists because documentation rots in ways tests do not catch. The second exists
+because a diagram that fails to parse renders as an error box on GitHub and nothing else
+notices — it caught three broken sequence diagrams the first time it ran.
 
 Python 3.11 or 3.12. Node 20+ for the console. No API key, ever.
 
