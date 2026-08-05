@@ -7,7 +7,7 @@ orchestration.
 
 [![CI](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-185%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-186%20passing-brightgreen)](tests/)
 [![Demo runs offline](https://img.shields.io/badge/demo-no%20API%20key-informational)](#quick-start)
 
 ---
@@ -188,7 +188,8 @@ Then open the console at <http://localhost:5173>.
 
 Every image below is produced by `make capture`, which drives the running application with
 Playwright and writes to `docs/assets/`. Nothing here is mocked up by hand, so an image that
-stops matching the code fails the capture rather than quietly going stale.
+stops matching the code fails the capture rather than quietly going stale. Content and layout
+reproduce exactly; timestamps and content-derived digests naturally differ per run.
 
 **1 · Register** — upload an OpenAPI 3.0 or 3.1 document. The exact bytes and their SHA-256
 digest are kept, and every operation is analyzed. Nothing is published yet.
@@ -355,7 +356,7 @@ make test-security  # only the tests that prove a control refuses something
 make check          # lint + typecheck + test, exactly what CI runs
 ```
 
-The console adds 5 more (`cd apps/control-plane/frontend && npm test`), for 185 in total.
+The console adds 6 more (`npm --prefix apps/control-plane/frontend test`), for 186 in total.
 
 | Suite | Protects |
 |---|---|

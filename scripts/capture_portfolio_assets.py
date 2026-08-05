@@ -5,12 +5,17 @@ Run it with ``make capture``. Every image in ``docs/assets/`` is produced by thi
 the running system — nothing is composed by hand, so an image that stops matching the code is
 a build failure rather than a stale file somebody forgot.
 
-Determinism is the point:
+What is deterministic, and what is not:
 
-* a fixed 1440x900 viewport at 2x, so images are consistent and legible;
-* the demo API's synthetic state is reseeded before the run;
-* the deterministic model provider, so the runtime picks the same tool every time;
+* a fixed 1440x900 viewport at 2x, so framing and legibility are identical every run;
+* the demo API's synthetic state is reseeded, so the same records appear;
+* the deterministic model provider, so the runtime picks the same tool and the same arguments;
 * animations disabled, so a frame is never captured mid-transition.
+
+The images are therefore reproducible in *content and layout*, but not byte-for-byte. Three of
+them embed a publication timestamp, a content-derived snapshot identifier, or an execution
+duration, and those legitimately differ between runs. Claiming byte-identical output would be
+easy to write and false.
 
 Everything it captures is synthetic. The tickets, teams, and people are invented, and the
 only credentials involved are the shipped development placeholders.
