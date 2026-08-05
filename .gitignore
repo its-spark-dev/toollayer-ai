@@ -35,3 +35,7 @@ data/
 
 # Local demo logs
 .demo-logs/
+
+# Capture run logs (the assets themselves are committed)
+.capture-logs/
+docs/assets/_video/

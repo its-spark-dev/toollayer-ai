@@ -90,6 +90,14 @@ demo-docker: ## Bring the stack up with Docker Compose and run the demonstration
 		--runtime-url http://localhost:$(RUNTIME_PORT) \
 		--demo-api-url http://demo-api:8081
 
+.PHONY: capture
+capture: ## Regenerate the README screenshots from the running application
+	@./scripts/run_capture.sh
+
+.PHONY: capture-video
+capture-video: ## Regenerate the screenshots and record the console walkthrough
+	@./scripts/run_capture.sh --animate
+
 .PHONY: down
 down: ## Stop the Docker Compose stack
 	docker compose down -v

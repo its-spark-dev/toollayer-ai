@@ -35,6 +35,8 @@ dev = [
     "types-jsonschema>=4.21",
 ]
 postgres = ["psycopg[binary]>=3.1"]
+# Only needed to regenerate the README screenshots; not required to run or test anything.
+capture = ["playwright>=1.44"]
 
 [project.scripts]
 toollayer-runtime = "runtime_service.cli:main"
