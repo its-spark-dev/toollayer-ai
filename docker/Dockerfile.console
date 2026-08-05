@@ -1,0 +1,29 @@
+# The admin console: built with Vite, served as static files by nginx.
+#
+# Build-time environment variables are baked into the bundle, which is why the token here is
+# the development placeholder. A real deployment would put the console behind an
+# authenticating proxy rather than shipping any credential to the browser — see
+# docs/threat-model.md.
+
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY apps/control-plane/frontend/package.json apps/control-plane/frontend/package-lock.json ./
+RUN npm ci
+
+COPY apps/control-plane/frontend/ ./
+COPY examples/ /examples/
+
+ARG VITE_CONTROL_PLANE_URL=http://localhost:8080
+ARG VITE_RUNTIME_URL=http://localhost:8082
+ARG VITE_ADMIN_TOKEN=dev-admin-token-change-me
+ENV VITE_CONTROL_PLANE_URL=$VITE_CONTROL_PLANE_URL \
+    VITE_RUNTIME_URL=$VITE_RUNTIME_URL \
+    VITE_ADMIN_TOKEN=$VITE_ADMIN_TOKEN
+
+RUN npm run build
+
+FROM nginx:1.27-alpine AS serve
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY docker/console-nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
