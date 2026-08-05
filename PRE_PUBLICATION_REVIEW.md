@@ -1,6 +1,6 @@
 # Pre-publication review
 
-**Status: READY FOR HUMAN REVIEW**
+**Status: READY FOR PUBLICATION APPROVAL** — licensed and merged; visibility deliberately held.
 
 Date: 2026-08-05 · Branch: `feature/initial-clean-room-implementation` · Contract version: 1.0.0
 
@@ -293,11 +293,22 @@ Automation cannot decide these.
 | 3 | Spot-check the README's claims against the code | Author |
 | 4 | Confirm the limitations sections are honest and complete | Author |
 | 5 | Run `make demo-docker` on a machine with Docker | Author |
-| 6 | Approve the MIT license and add the copyright line | Author |
-| 7 | Decide on repository visibility | Author |
+| 6 | ~~Approve the MIT license and add the copyright line~~ | ✅ done — MIT, `LICENSE` |
+| 7 | Decide on repository visibility | **Deferred by the author** |
 | 8 | Capture the screenshots/GIFs the README marks as placeholders | Author |
+| 9 | Push `main` | **Deferred by the author** — to be done manually |
 
 Item 2 is the one that actually gates publication. Everything else is verification.
+
+### Decisions taken 2026-08-05
+
+| Decision | Outcome |
+|---|---|
+| License | **MIT**, added as `LICENSE` and declared in `pyproject.toml` |
+| Merge into `main` | **Approved and completed** locally, as a no-fast-forward merge |
+| Push | **Held.** The author will push manually. Nothing has been pushed to the remote. |
+| Public visibility | **Held.** The repository remains private. |
+| `v0.1.0` release | **Held.** No tag has been created. |
 
 ## 16. Recommendation
 
@@ -320,4 +331,6 @@ port-binding bug — which were fixed rather than documented around.
 
 The remaining gate is human judgement about publishing, not a technical finding.
 
-**Status after human sign-off: READY FOR PUBLICATION APPROVAL.**
+**Current state.** The license decision is made and the branch is merged into `main` locally.
+The repository is still **private**, nothing has been **pushed**, and no release tag exists —
+all three by the author's explicit instruction. Publication remains a deliberate, separate act.

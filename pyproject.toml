@@ -8,9 +8,9 @@ version = "0.1.0"
 description = "An OpenAPI-to-tool control plane and reference runtime for safe, provider-neutral LLM orchestration."
 readme = "README.md"
 requires-python = ">=3.11"
-# No license is declared yet. Declaring one before the decision is made would state a grant
-# that has not actually been given. See LICENSE_REVIEW_REQUIRED.md.
-authors = [{ name = "its-spark-dev" }]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Sang Park" }]
 keywords = ["openapi", "llm", "tool-calling", "control-plane", "json-schema"]
 
 dependencies = [
@@ -50,8 +50,10 @@ packages = [
     "apps/demo-api/demo_api",
 ]
 
-[tool.hatch.build.targets.wheel.force-include]
-"packages/contracts/toollayer_contracts/schemas" = "toollayer_contracts/schemas"
+# The JSON Schemas live inside the `toollayer_contracts` package directory, so they are
+# already carried by the entry above. A `force-include` for them would add the same paths a
+# second time, which hatchling rejects — and which made `pip install .` from a clone fail
+# while the editable install kept working.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

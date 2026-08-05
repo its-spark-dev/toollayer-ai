@@ -353,5 +353,5 @@ The intent, audience, and scope controls are stated up front in
 
 ## License
 
-Not yet licensed — see [`LICENSE_REVIEW_REQUIRED.md`](LICENSE_REVIEW_REQUIRED.md). MIT is
-intended, pending the pre-publication review.
+[MIT](LICENSE). Every runtime dependency is under a permissive license (MIT, BSD-3-Clause, or
+Apache-2.0); the inventory is in [`PRE_PUBLICATION_REVIEW.md`](PRE_PUBLICATION_REVIEW.md) §7.
