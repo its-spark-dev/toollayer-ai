@@ -1,0 +1,89 @@
+# Local development topology.
+#
+# Three services, one shared image, one SQLite volume. This describes a machine you can run
+# the demo on — it is not a production deployment, and docs/deployment.md says so plainly.
+#
+# The runtime's destination allowlist names the demo API's compose service explicitly. There
+# is no wildcard: adding a fourth service does not make it reachable from a tool call.
+
+services:
+  demo-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: toollayer-ai:local
+    command: ["uvicorn", "demo_api.main:app", "--host", "0.0.0.0", "--port", "8081"]
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8081/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: toollayer-ai:local
+    command: ["uvicorn", "control_plane.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "8080:8080"
+    environment:
+      TOOLLAYER_CONTROL_PLANE_DATABASE_URL: sqlite:////data/control-plane.db
+      TOOLLAYER_ADMIN_TOKEN: ${TOOLLAYER_ADMIN_TOKEN:-dev-admin-token-change-me}
+      TOOLLAYER_SERVICE_TOKEN: ${TOOLLAYER_SERVICE_TOKEN:-dev-service-token-change-me}
+      TOOLLAYER_CONTROL_PLANE_CORS_ORIGINS: http://localhost:5173
+    volumes:
+      - control-plane-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  runtime:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: toollayer-ai:local
+    command: ["uvicorn", "runtime_service.main:app", "--host", "0.0.0.0", "--port", "8082"]
+    ports:
+      - "8082:8082"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      demo-api:
+        condition: service_healthy
+    environment:
+      TOOLLAYER_CONTROL_PLANE_URL: http://control-plane:8080
+      TOOLLAYER_SERVICE_TOKEN: ${TOOLLAYER_SERVICE_TOKEN:-dev-service-token-change-me}
+      TOOLLAYER_DEPLOYMENT_KEY: demo-workspace
+      # The one destination this runtime may contact. Exact origin, no wildcard.
+      TOOLLAYER_ALLOWED_ORIGINS: http://demo-api:8081
+      # Both escape hatches are on because the demo API is plaintext HTTP on a private
+      # compose network. Neither is on by default, and a security test proves the loopback
+      # refusal still holds when they are off.
+      TOOLLAYER_ALLOW_PLAINTEXT_HTTP: "true"
+      TOOLLAYER_ALLOW_PRIVATE_ADDRESSES: "true"
+      TOOLLAYER_SNAPSHOT_REFRESH_SECONDS: "15"
+      TOOLLAYER_RUNTIME_CORS_ORIGINS: http://localhost:5173
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8082/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  console:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.console
+    image: toollayer-console:local
+    ports:
+      - "5173:80"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+
+volumes:
+  control-plane-data:
