@@ -52,8 +52,7 @@ def _render(status: int, body: Any, *, verbose: bool) -> int:
         for tool in body["tools"]:
             marker = "!" if tool["effect_class"] != "read" else " "
             print(
-                f" {marker} {tool['tool_name']:34} "
-                f"{tool['effect_class']:12} {tool['display_name']}"
+                f" {marker} {tool['tool_name']:34} {tool['effect_class']:12} {tool['display_name']}"
             )
         return 0
 

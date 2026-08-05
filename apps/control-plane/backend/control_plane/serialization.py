@@ -35,9 +35,7 @@ def serialize_analysis(result: AnalysisResult) -> dict[str, Any]:
                 # makes the transformation reviewable rather than a black box.
                 "source_operation": operation.source_operation,
                 "tool": operation.tool.model_dump(mode="json") if operation.tool else None,
-                "diagnostics": [
-                    diagnostic.to_dict() for diagnostic in operation.diagnostics
-                ],
+                "diagnostics": [diagnostic.to_dict() for diagnostic in operation.diagnostics],
             }
             for operation in result.operations
         ],

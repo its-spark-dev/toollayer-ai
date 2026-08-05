@@ -88,9 +88,7 @@ def convert_schema(schema: object, *, pointer: str = "", depth: int = 0) -> dict
         _copy_supported(schema, converted, _ARRAY_KEYWORDS, pointer)
         items = schema.get("items")
         if items is None:
-            raise UnsupportedFeatureError(
-                "an array schema must declare its items", pointer=pointer
-            )
+            raise UnsupportedFeatureError("an array schema must declare its items", pointer=pointer)
         converted["items"] = convert_schema(items, pointer=f"{pointer}/items", depth=depth + 1)
     elif declared_type == "object":
         converted.update(_convert_object(schema, pointer=pointer, depth=depth))
@@ -274,8 +272,7 @@ def _reject_unknown_keywords(schema: dict[str, Any], declared_type: str, pointer
     unknown = sorted(set(schema) - known)
     if unknown:
         raise UnsupportedFeatureError(
-            f"the schema keyword {unknown[0]!r} is not supported for a "
-            f"{declared_type!r} schema",
+            f"the schema keyword {unknown[0]!r} is not supported for a {declared_type!r} schema",
             pointer=pointer,
         )
 

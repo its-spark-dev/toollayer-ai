@@ -186,9 +186,7 @@ class TestPublication:
         assert stored["document"]["lifecycle_state"] == "published"
         assert stored["document"]["audit"]["published_at"] is not None
 
-    def test_publication_consumes_the_draft(
-        self, control_plane, support_api_document: str
-    ) -> None:
+    def test_publication_consumes_the_draft(self, control_plane, support_api_document: str) -> None:
         draft = _register(control_plane, support_api_document)
         control_plane.post(
             "/admin/v1/connectors/support-api/publish",
@@ -431,9 +429,7 @@ class TestDeploymentsAndSnapshots:
         assert again.status_code == 304
         assert not again.content
 
-    def test_a_deployment_without_a_snapshot_reports_it_as_unavailable(
-        self, control_plane
-    ) -> None:
+    def test_a_deployment_without_a_snapshot_reports_it_as_unavailable(self, control_plane) -> None:
         control_plane.post(
             "/admin/v1/deployments",
             headers=ADMIN_HEADERS,

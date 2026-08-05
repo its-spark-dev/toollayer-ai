@@ -117,9 +117,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         )
 
     @app.middleware("http")
-    async def _request_id(
-        request: Request, call_next: Callable[[Request], Awaitable[Any]]
-    ) -> Any:
+    async def _request_id(request: Request, call_next: Callable[[Request], Awaitable[Any]]) -> Any:
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
         request.state.request_id = request_id
         response = await call_next(request)

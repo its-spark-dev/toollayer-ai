@@ -227,7 +227,9 @@ class TestDestinationControls:
             policy.check("http://localhost:8081/v1/tickets")
         assert caught.value.code == ErrorCode.PRIVATE_ADDRESS_BLOCKED
 
-    def test_a_redirect_is_a_failure_rather_than_a_hop(self, loaded_snapshot, stub_resolver) -> None:
+    def test_a_redirect_is_a_failure_rather_than_a_hop(
+        self, loaded_snapshot, stub_resolver
+    ) -> None:
         class RedirectingTransport:
             def send(self, request: Any, *, limits: Any) -> tuple[int, dict[str, str], bytes]:
                 return 302, {"location": "https://attacker.test/collect"}, b""
@@ -253,7 +255,11 @@ class TestDestinationControls:
     ) -> None:
         class FloodingTransport:
             def send(self, request: Any, *, limits: Any) -> tuple[int, dict[str, str], bytes]:
-                return 200, {"content-type": "application/json"}, b"x" * (limits.max_response_bytes + 1)
+                return (
+                    200,
+                    {"content-type": "application/json"},
+                    b"x" * (limits.max_response_bytes + 1),
+                )
 
         executor = ToolExecutor(
             policy=DestinationPolicy.from_origins([DEMO_ORIGIN], allow_plaintext_http=True),
@@ -299,7 +305,9 @@ class TestDestinationControls:
         self, orchestrator
     ) -> None:
         outcome = orchestrator.execute_tool(
-            tool_name="get_support_ticket", arguments={"ticket_id": "TKT-DOES-NOT-EXIST"}, caller=AGENT
+            tool_name="get_support_ticket",
+            arguments={"ticket_id": "TKT-DOES-NOT-EXIST"},
+            caller=AGENT,
         )
         assert outcome.result is not None
         assert outcome.result.status == "upstream_error"

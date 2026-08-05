@@ -51,9 +51,7 @@ def create_app(*, create_tables: bool = True) -> FastAPI:
         )
 
     @app.middleware("http")
-    async def _request_id(
-        request: Request, call_next: Callable[[Request], Awaitable[Any]]
-    ) -> Any:
+    async def _request_id(request: Request, call_next: Callable[[Request], Awaitable[Any]]) -> Any:
         """Attach a request id to every response so a client can quote it in a bug report."""
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
         request.state.request_id = request_id
@@ -67,9 +65,7 @@ def create_app(*, create_tables: bool = True) -> FastAPI:
         # Publication readiness reports several blocking issues at once. They are surfaced
         # so the console can list every one instead of discovering them one failed publish
         # at a time.
-        details = tuple(
-            ErrorDetail(code="publication.blocked", message=issue) for issue in issues
-        )
+        details = tuple(ErrorDetail(code="publication.blocked", message=issue) for issue in issues)
         envelope = ErrorEnvelope(
             code=exc.code,
             message=exc.message,
@@ -96,9 +92,7 @@ def create_app(*, create_tables: bool = True) -> FastAPI:
         return JSONResponse(status_code=envelope.http_status, content=envelope.to_dict())
 
     @app.exception_handler(RequestValidationError)
-    async def _request_validation(
-        request: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def _request_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
         # Framework validation errors carry the rejected input. It is stripped here rather
         # than passed through, because these responses are logged by clients.
         envelope = ErrorEnvelope(

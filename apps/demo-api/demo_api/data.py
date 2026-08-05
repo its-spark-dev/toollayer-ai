@@ -210,14 +210,10 @@ class TicketStore:
         return next((team for team in self.teams if team["team_id"] == team_id), None)
 
     def member(self, member_id: str) -> dict[str, Any] | None:
-        return next(
-            (member for member in self.members if member["member_id"] == member_id), None
-        )
+        return next((member for member in self.members if member["member_id"] == member_id), None)
 
     def ticket(self, ticket_id: str) -> dict[str, Any] | None:
-        return next(
-            (ticket for ticket in self.tickets if ticket["ticket_id"] == ticket_id), None
-        )
+        return next((ticket for ticket in self.tickets if ticket["ticket_id"] == ticket_id), None)
 
 
 def seed_state() -> TicketStore:

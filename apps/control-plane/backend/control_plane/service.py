@@ -101,9 +101,7 @@ def register_connector(
     )
     analysis = analyze_document(loaded, base_url_override=base_url_override)
 
-    connector = session.scalar(
-        select(Connector).where(Connector.connector_key == connector_key)
-    )
+    connector = session.scalar(select(Connector).where(Connector.connector_key == connector_key))
     if connector is None:
         connector = Connector(
             connector_key=connector_key,
@@ -158,9 +156,7 @@ def list_connectors(session: Session) -> list[Connector]:
 
 
 def get_connector(session: Session, connector_key: str) -> Connector:
-    connector = session.scalar(
-        select(Connector).where(Connector.connector_key == connector_key)
-    )
+    connector = session.scalar(select(Connector).where(Connector.connector_key == connector_key))
     if connector is None:
         raise NotFoundError("no connector exists with that key")
     return connector
@@ -401,9 +397,7 @@ class SnapshotSelection:
 def create_deployment(
     session: Session, *, deployment_key: str, display_name: str, description: str = ""
 ) -> Deployment:
-    existing = session.scalar(
-        select(Deployment).where(Deployment.deployment_key == deployment_key)
-    )
+    existing = session.scalar(select(Deployment).where(Deployment.deployment_key == deployment_key))
     if existing is not None:
         raise ConflictError("a deployment already exists with that key", pointer="/deployment_key")
     deployment = Deployment(

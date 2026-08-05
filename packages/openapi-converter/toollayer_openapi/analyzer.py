@@ -67,9 +67,7 @@ class AnalysisResult:
 
     @property
     def tools(self) -> tuple[ToolDefinition, ...]:
-        return tuple(
-            operation.tool for operation in self.operations if operation.tool is not None
-        )
+        return tuple(operation.tool for operation in self.operations if operation.tool is not None)
 
     @property
     def all_diagnostics(self) -> tuple[Diagnostic, ...]:
@@ -225,9 +223,7 @@ def _analyze_operation(
         )
 
     try:
-        tool = convert_operation(
-            path=path, method=method, path_item=path_item, operation=operation
-        )
+        tool = convert_operation(path=path, method=method, path_item=path_item, operation=operation)
     except ConversionError as error:
         return AnalyzedOperation(
             key=key,

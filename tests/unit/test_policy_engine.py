@@ -77,7 +77,9 @@ class TestAuthorization:
         policy = parse_audience_policy(
             {"access": {"access_mode": "restricted", "allowed_roles": ["support-lead"]}}
         )
-        assert authorize_tool(policy=policy, caller=CallerIdentity.of("u", ["support-lead"])).allowed
+        assert authorize_tool(
+            policy=policy, caller=CallerIdentity.of("u", ["support-lead"])
+        ).allowed
         denied = authorize_tool(policy=policy, caller=CallerIdentity.of("u", ["support-agent"]))
         assert denied.denied and denied.reason_code == "role_not_permitted"
 
@@ -131,7 +133,9 @@ class TestDestinationPolicy:
         )
 
     def test_plaintext_http_is_refused_unless_enabled(self) -> None:
-        policy = DestinationPolicy.from_origins(["http://api.example.org"], allow_plaintext_http=False)
+        policy = DestinationPolicy.from_origins(
+            ["http://api.example.org"], allow_plaintext_http=False
+        )
         with pytest.raises(PolicyDenied, match="plaintext"):
             policy.check("http://api.example.org/v1")
 

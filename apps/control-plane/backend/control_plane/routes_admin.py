@@ -119,9 +119,7 @@ def update_draft(
 # --------------------------------------------------------------------------------------
 
 
-@router.post(
-    "/connectors/{connector_key}/publish", response_model=VersionSummary, status_code=201
-)
+@router.post("/connectors/{connector_key}/publish", response_model=VersionSummary, status_code=201)
 def publish(
     connector_key: str,
     payload: PublishRequest,

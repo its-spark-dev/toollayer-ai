@@ -158,9 +158,7 @@ def load_snapshot_document(document: Any, *, etag: str | None = None) -> LoadedS
     if not verify_digest(document, declared, exclude=_DIGEST_EXCLUDED):
         # The digest is recomputed rather than taken on faith. This is what makes the
         # snapshot self-verifying: transport integrity is not the same as artifact integrity.
-        raise SnapshotIntegrityError(
-            "the snapshot content does not match the digest it declares"
-        )
+        raise SnapshotIntegrityError("the snapshot content does not match the digest it declares")
 
     snapshot = DeploymentSnapshot.model_validate(document)
     for connector in snapshot.connectors:
@@ -245,9 +243,7 @@ class SnapshotStore:
         """Return the loaded snapshot, refusing to serve if there is none."""
         snapshot = self._current
         if snapshot is None:
-            raise SnapshotError(
-                "the runtime has no deployment snapshot; it cannot serve any tool"
-            )
+            raise SnapshotError("the runtime has no deployment snapshot; it cannot serve any tool")
         return snapshot
 
     @property

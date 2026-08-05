@@ -123,7 +123,10 @@ def run(control_plane_url: str, runtime_url: str, admin_token: str) -> int:
                 "document_filename": SPEC.name,
             },
         )
-        detail(f"source digest {draft['source']['digest'][:23]}…  ({draft['source']['byte_length']} bytes)")
+        detail(
+            f"source digest {draft['source']['digest'][:23]}…  "
+            f"({draft['source']['byte_length']} bytes)"
+        )
         good(f"analyzed {len(draft['analysis']['operations'])} operations into tool definitions")
         for entry in draft["analysis"]["operations"]:
             tool = entry["tool"]
@@ -189,7 +192,10 @@ def run(control_plane_url: str, runtime_url: str, admin_token: str) -> int:
             201,
             json={"selections": [{"connector_key": "support-api", "version": "0.1.0"}]},
         )
-        good(f"snapshot revision {snapshot['revision']} pins 1 connector, {snapshot['tool_count']} tools")
+        good(
+            f"snapshot revision {snapshot['revision']} pins "
+            f"{snapshot['connector_count']} connector, {snapshot['tool_count']} tools"
+        )
         detail(f"snapshot id {snapshot['snapshot_id']}")
         detail(f"snapshot digest {snapshot['snapshot_digest'][:23]}…")
 

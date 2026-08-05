@@ -215,9 +215,7 @@ class DestinationPolicy:
         )
 
     @staticmethod
-    def _resolved_addresses(
-        host: str, port: int, resolver: DnsResolver | None
-    ) -> tuple[str, ...]:
+    def _resolved_addresses(host: str, port: int, resolver: DnsResolver | None) -> tuple[str, ...]:
         try:
             literal = ipaddress.ip_address(host)
         except ValueError:

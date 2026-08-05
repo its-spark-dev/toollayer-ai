@@ -27,7 +27,9 @@ pytestmark = pytest.mark.unit
 
 
 def _document(paths: dict, **extra) -> bytes:
-    return json.dumps({"openapi": "3.1.0", "info": {"title": "T", "version": "1"}, "paths": paths, **extra}).encode()
+    return json.dumps(
+        {"openapi": "3.1.0", "info": {"title": "T", "version": "1"}, "paths": paths, **extra}
+    ).encode()
 
 
 def _operation(**overrides) -> dict:
@@ -106,7 +108,12 @@ class TestParameterConversion:
             operation=_operation(
                 operationId="getItem",
                 parameters=[
-                    {"name": "item_id", "in": "path", "required": True, "schema": {"type": "string"}},
+                    {
+                        "name": "item_id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
                     {
                         "name": "verbose",
                         "in": "query",
@@ -222,7 +229,12 @@ class TestParameterConversion:
                 path_item={},
                 operation=_operation(
                     parameters=[
-                        {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
                         {"name": "id", "in": "query", "schema": {"type": "string"}},
                     ]
                 ),
@@ -278,7 +290,9 @@ class TestRequestBodyConversion:
             method="delete",
             path_item={},
             operation=_operation(
-                parameters=[{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}]
+                parameters=[
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}
+                ]
             ),
         )
         assert tool.policy.effect_class == "destructive"

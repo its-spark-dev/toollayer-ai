@@ -85,7 +85,6 @@ class OperationReview:
         )
 
 
-
 @dataclass(frozen=True, slots=True)
 class ReviewState:
     """Every decision recorded for one draft."""

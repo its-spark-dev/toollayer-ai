@@ -249,9 +249,7 @@ def _parse_parameter(entry: object, source: str) -> _Parameter:
     if not isinstance(required, bool):
         raise InvalidDocumentError(f"the parameter {name!r} has a non-boolean 'required'")
     if location == "path" and not required:
-        raise InvalidDocumentError(
-            f"the path parameter {name!r} must declare 'required: true'"
-        )
+        raise InvalidDocumentError(f"the path parameter {name!r} must declare 'required: true'")
 
     _reject_unsupported_serialization(entry, name, location)
 

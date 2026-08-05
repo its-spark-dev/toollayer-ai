@@ -45,11 +45,59 @@ _INTEGER: Final = re.compile(r"\b\d+\b")
 #: hand-tuned list would be fitting the demo rather than describing a method.
 _STOPWORDS: Final[frozenset[str]] = frozenset(
     {
-        "a", "all", "am", "an", "and", "any", "are", "as", "at", "be", "by", "can", "could",
-        "do", "does", "for", "from", "get", "give", "has", "have", "i", "in", "is", "it",
-        "me", "my", "of", "on", "or", "please", "show", "that", "the", "then", "there",
-        "these", "this", "to", "up", "us", "want", "was", "we", "what", "when", "which",
-        "who", "will", "with", "would", "you", "your",
+        "a",
+        "all",
+        "am",
+        "an",
+        "and",
+        "any",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "could",
+        "do",
+        "does",
+        "for",
+        "from",
+        "get",
+        "give",
+        "has",
+        "have",
+        "i",
+        "in",
+        "is",
+        "it",
+        "me",
+        "my",
+        "of",
+        "on",
+        "or",
+        "please",
+        "show",
+        "that",
+        "the",
+        "then",
+        "there",
+        "these",
+        "this",
+        "to",
+        "up",
+        "us",
+        "want",
+        "was",
+        "we",
+        "what",
+        "when",
+        "which",
+        "who",
+        "will",
+        "with",
+        "would",
+        "you",
+        "your",
     }
 )
 
@@ -61,9 +109,29 @@ _SELECTION_THRESHOLD: Final = 2.0
 #: makes a read-only tool the wrong answer even when it is the closest textual match.
 _MUTATION_VERBS: Final[frozenset[str]] = frozenset(
     {
-        "add", "assign", "cancel", "change", "close", "create", "delete", "edit", "file",
-        "hand", "mark", "modify", "move", "new", "purge", "raise", "reassign", "remove",
-        "reopen", "replace", "resolve", "set", "update",
+        "add",
+        "assign",
+        "cancel",
+        "change",
+        "close",
+        "create",
+        "delete",
+        "edit",
+        "file",
+        "hand",
+        "mark",
+        "modify",
+        "move",
+        "new",
+        "purge",
+        "raise",
+        "reassign",
+        "remove",
+        "reopen",
+        "replace",
+        "resolve",
+        "set",
+        "update",
     }
 )
 
@@ -409,8 +477,19 @@ def _describe(item: Any) -> str:
     """Render one record as a short, readable line."""
     if not isinstance(item, dict):
         return str(item)[:120]
-    preferred = ("ticket_id", "team_id", "member_id", "subject", "display_name", "name",
-                 "status", "priority", "assignee_id", "role", "available")
+    preferred = (
+        "ticket_id",
+        "team_id",
+        "member_id",
+        "subject",
+        "display_name",
+        "name",
+        "status",
+        "priority",
+        "assignee_id",
+        "role",
+        "available",
+    )
     parts = [f"{key}={item[key]}" for key in preferred if key in item and item[key] is not None]
     if not parts:
         parts = [f"{key}={value}" for key, value in list(item.items())[:4]]

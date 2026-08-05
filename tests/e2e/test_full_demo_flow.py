@@ -168,9 +168,7 @@ def test_openapi_document_to_governed_execution(
     ]
 
     # 9. An authorized caller can change state, with confirmation.
-    outcome = orchestrator.handle(
-        "mark ticket TKT-1001 as resolved", caller=LEAD, confirmed=True
-    )
+    outcome = orchestrator.handle("mark ticket TKT-1001 as resolved", caller=LEAD, confirmed=True)
     assert outcome.selected_tool == "change_support_ticket_status"
     assert outcome.result is not None and outcome.result.http_status == 200
     assert outcome.result.content["status"] == "resolved"
@@ -220,9 +218,7 @@ def test_the_runtime_serves_the_flow_over_http(
         deployment_key="demo-workspace",
     )
     store.set(load_snapshot_document(published_snapshot))
-    orchestrator = Orchestrator(
-        store=store, provider=MockLLMProvider(), executor=runtime_executor
-    )
+    orchestrator = Orchestrator(store=store, provider=MockLLMProvider(), executor=runtime_executor)
 
     with TestClient(create_app(orchestrator)) as client:
         health = client.get("/healthz").json()
