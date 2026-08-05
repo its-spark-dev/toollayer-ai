@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.toollayer.example/v1/connector-definition.schema.json",
+  "title": "ToolLayer Connector Definition",
+  "description": "A portable, versioned bundle of provider-neutral tools derived from one API description. It never carries credentials, secrets, or deployment configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "connector_key",
+    "display_name",
+    "summary",
+    "version",
+    "lifecycle_state",
+    "runtime",
+    "source",
+    "tools",
+    "labels",
+    "audit"
+  ],
+  "properties": {
+    "contract_version": {
+      "$ref": "#/$defs/semantic_version",
+      "description": "Version of the ToolLayer contract family this document conforms to."
+    },
+    "connector_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "description": "Stable connector identity, unique within an organization."
+    },
+    "display_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "version": {
+      "$ref": "#/$defs/semantic_version",
+      "description": "Immutable once published. Changing a published definition requires a new version."
+    },
+    "lifecycle_state": {
+      "type": "string",
+      "enum": ["draft", "published", "disabled"]
+    },
+    "runtime": { "$ref": "#/$defs/runtime_binding" },
+    "source": { "$ref": "#/$defs/source_provenance" },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "description": "Inline tool definitions. Tool names must be unique within the connector version; uniqueness is enforced semantically, not by this schema.",
+      "items": { "$ref": "tool-definition.schema.json" }
+    },
+    "labels": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+    },
+    "audit": { "$ref": "#/$defs/audit_timestamps" }
+  },
+  "$defs": {
+    "semantic_version": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "description": "Semantic Versioning 2.0.0 without build metadata."
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Lowercase hex SHA-256 digest with an explicit algorithm prefix."
+    },
+    "opaque_reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+    },
+    "runtime_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "base_url", "auth_profile_ref"],
+      "properties": {
+        "protocol": { "const": "http" },
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048,
+          "pattern": "^https?://(?![^/?#]*@)[^?#]+$",
+          "description": "Reviewed origin plus optional base path. Userinfo is forbidden. The runtime destination allowlist remains authoritative regardless of this value."
+        },
+        "auth_profile_ref": {
+          "oneOf": [{ "$ref": "#/$defs/opaque_reference" }, { "type": "null" }],
+          "description": "Opaque name of an authentication profile the runtime resolves locally. Never a secret and never a credential."
+        }
+      }
+    },
+    "source_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "spec_version", "document_filename", "document_digest", "byte_length"],
+      "properties": {
+        "format": { "type": "string", "enum": ["openapi"] },
+        "spec_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "description": "The OpenAPI version declared by the source document."
+        },
+        "document_filename": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "document_digest": { "$ref": "#/$defs/digest" },
+        "byte_length": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "audit_timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at", "updated_at", "published_at"],
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "published_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Set exactly once, when the version is published."
+        }
+      }
+    }
+  }
+}

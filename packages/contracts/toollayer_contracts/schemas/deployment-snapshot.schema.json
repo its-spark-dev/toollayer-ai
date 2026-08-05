@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.toollayer.example/v1/deployment-snapshot.schema.json",
+  "title": "ToolLayer Deployment Snapshot",
+  "description": "The immutable set of exact connector versions one runtime deployment may serve. A snapshot is never edited; a change produces a new snapshot with a new revision and a new digest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "snapshot_id",
+    "deployment_key",
+    "revision",
+    "created_at",
+    "snapshot_digest",
+    "connectors"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^snap_[0-9a-f]{32}$",
+      "description": "Opaque snapshot identity derived from the snapshot content digest."
+    },
+    "deployment_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing per deployment. Revisions are never reused."
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "snapshot_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 over the canonical JSON of this document with snapshot_id and snapshot_digest removed. A consumer recomputes it before trusting the payload."
+    },
+    "connectors": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 64,
+      "description": "Exactly one published version per connector_key. Uniqueness is enforced semantically.",
+      "items": { "$ref": "connector-definition.schema.json" }
+    }
+  }
+}
