@@ -42,11 +42,11 @@ setup: ## Create the virtualenv and install every dependency
 
 .PHONY: test
 test: ## Run the whole test suite
-	$(BIN)/python -m pytest tests
+	$(BIN)/pytest tests
 
 .PHONY: test-security
 test-security: ## Run only the tests that prove a control refuses something
-	$(BIN)/python -m pytest tests/security tests/contract -v
+	$(BIN)/pytest tests/security tests/contract -v
 
 .PHONY: lint
 lint: ## Check formatting and lint rules

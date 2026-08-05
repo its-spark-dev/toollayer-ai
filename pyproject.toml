@@ -60,6 +60,10 @@ packages = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [
+    # The repository root, so `from tests.factories import ...` resolves however pytest was
+    # invoked. Without it, `python -m pytest` works (it puts the CWD on sys.path) while a bare
+    # `pytest` does not — a difference that hides the breakage locally and surfaces it in CI.
+    ".",
     "packages/contracts",
     "packages/openapi-converter",
     "packages/policy-engine",
