@@ -90,4 +90,5 @@ wait_for_health runtime "${RUNTIME_PORT}"
 "${VENV_BIN}/python" scripts/demo.py \
   --control-plane-url "http://127.0.0.1:${CONTROL_PLANE_PORT}" \
   --runtime-url "http://127.0.0.1:${RUNTIME_PORT}" \
+  --demo-api-url "http://localhost:${DEMO_API_PORT}" \
   --admin-token "${TOOLLAYER_ADMIN_TOKEN}"

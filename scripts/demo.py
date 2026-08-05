@@ -94,7 +94,7 @@ def wait_for(client: Client, path: str, *, label: str, attempts: int = 40) -> No
     raise DemoError(f"{label} did not become available")
 
 
-def run(control_plane_url: str, runtime_url: str, admin_token: str) -> int:
+def run(control_plane_url: str, runtime_url: str, demo_api_url: str, admin_token: str) -> int:
     control = Client(control_plane_url, {"x-toollayer-admin-token": admin_token})
     agent = Client(
         runtime_url,
@@ -109,6 +109,7 @@ def run(control_plane_url: str, runtime_url: str, admin_token: str) -> int:
         print(f"{BOLD}ToolLayer AI — end-to-end demonstration{RESET}")
         detail(f"control plane: {control_plane_url}")
         detail(f"runtime:       {runtime_url}")
+        detail(f"demo API:      {demo_api_url}")
 
         wait_for(control, "/healthz", label="the control plane")
 
@@ -121,6 +122,10 @@ def run(control_plane_url: str, runtime_url: str, admin_token: str) -> int:
                 "connector_key": "support-api",
                 "document": SPEC.read_text(encoding="utf-8"),
                 "document_filename": SPEC.name,
+                # The document declares where its author publishes the API. Where *this*
+                # deployment should call it is a separate decision, so it is supplied
+                # explicitly rather than inherited from the specification.
+                "base_url": demo_api_url,
             },
         )
         detail(
@@ -307,11 +312,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the ToolLayer AI demonstration flow.")
     parser.add_argument("--control-plane-url", default="http://localhost:8080")
     parser.add_argument("--runtime-url", default="http://localhost:8082")
+    parser.add_argument("--demo-api-url", default="http://localhost:8081")
     parser.add_argument("--admin-token", default="dev-admin-token-change-me")
     args = parser.parse_args(argv)
 
     try:
-        return run(args.control_plane_url, args.runtime_url, args.admin_token)
+        return run(args.control_plane_url, args.runtime_url, args.demo_api_url, args.admin_token)
     except DemoError as error:
         print(f"\n{RED}demo failed:{RESET} {error}", file=sys.stderr)
         return 1

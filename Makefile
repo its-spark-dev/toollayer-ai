@@ -87,7 +87,8 @@ demo-docker: ## Bring the stack up with Docker Compose and run the demonstration
 	@echo "waiting for services to become ready…"
 	@$(BIN)/python scripts/demo.py \
 		--control-plane-url http://localhost:$(CONTROL_PLANE_PORT) \
-		--runtime-url http://localhost:$(RUNTIME_PORT)
+		--runtime-url http://localhost:$(RUNTIME_PORT) \
+		--demo-api-url http://demo-api:8081
 
 .PHONY: down
 down: ## Stop the Docker Compose stack
