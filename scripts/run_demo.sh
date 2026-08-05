@@ -11,15 +11,23 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-VENV_BIN="${REPO_ROOT}/.venv/bin"
 LOG_DIR="${REPO_ROOT}/.demo-logs"
 
 CONTROL_PLANE_PORT="${CONTROL_PLANE_PORT:-8080}"
 DEMO_API_PORT="${DEMO_API_PORT:-8081}"
 RUNTIME_PORT="${RUNTIME_PORT:-8082}"
 
-if [[ ! -x "${VENV_BIN}/uvicorn" ]]; then
-  echo "The virtualenv is not set up. Run 'make setup' first." >&2
+# Prefer the project virtualenv, but fall back to whatever is on PATH. CI installs into the
+# runner's Python rather than creating a .venv, and a demo script that only works one of those
+# two ways is a demo script that quietly stops being run.
+if [[ -x "${REPO_ROOT}/.venv/bin/uvicorn" ]]; then
+  PY_BIN="${REPO_ROOT}/.venv/bin/python"
+  UVICORN_BIN="${REPO_ROOT}/.venv/bin/uvicorn"
+elif command -v uvicorn >/dev/null 2>&1; then
+  PY_BIN="$(command -v python3 || command -v python)"
+  UVICORN_BIN="$(command -v uvicorn)"
+else
+  echo "Neither .venv nor an installed uvicorn was found. Run 'make setup' first." >&2
   exit 1
 fi
 
@@ -62,7 +70,7 @@ trap cleanup EXIT INT TERM
 start() {
   local name="$1" module="$2" port="$3"
   echo "starting ${name} on port ${port}…"
-  "${VENV_BIN}/uvicorn" "${module}" --host 127.0.0.1 --port "${port}" --log-level warning \
+  "${UVICORN_BIN}" "${module}" --host 127.0.0.1 --port "${port}" --log-level warning \
     >"${LOG_DIR}/${name}.log" 2>&1 &
   PIDS+=("$!")
 }
@@ -87,7 +95,7 @@ wait_for_health demo-api "${DEMO_API_PORT}"
 wait_for_health control-plane "${CONTROL_PLANE_PORT}"
 wait_for_health runtime "${RUNTIME_PORT}"
 
-"${VENV_BIN}/python" scripts/demo.py \
+"${PY_BIN}" scripts/demo.py \
   --control-plane-url "http://127.0.0.1:${CONTROL_PLANE_PORT}" \
   --runtime-url "http://127.0.0.1:${RUNTIME_PORT}" \
   --demo-api-url "http://localhost:${DEMO_API_PORT}" \
