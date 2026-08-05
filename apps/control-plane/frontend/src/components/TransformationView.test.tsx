@@ -54,26 +54,38 @@ const operation: AnalyzedOperation = {
 }
 
 describe('TransformationView', () => {
-  it('shows the generated tool definition first', () => {
+  it('opens on the side-by-side view, so both ends of the transformation are visible', () => {
+    // This default is the console's reason to exist. A reviewer approving a transformation
+    // has to be able to see the input next to the output without hunting for a tab.
     render(<TransformationView operation={operation} tool={tool} />)
+    expect(screen.getByTestId('pane-source')).toHaveTextContent('listSupportTickets')
     expect(screen.getByTestId('pane-canonical')).toHaveTextContent('list_support_tickets')
     expect(screen.getByTestId('pane-canonical')).toHaveTextContent('additionalProperties')
   })
 
-  it('shows the source operation the tool was derived from', async () => {
+  it('labels which pane is the input and which is the generated output', () => {
+    // Asserted against the rendered text rather than per element: each caption is a badge
+    // element plus a sibling text node, so no single element holds the whole phrase.
+    const { container } = render(<TransformationView operation={operation} tool={tool} />)
+    expect(container.textContent).toContain('Input OpenAPI operation')
+    expect(container.textContent).toContain('Output Tool definition')
+  })
+
+  it('shows the source operation on its own tab', async () => {
     render(<TransformationView operation={operation} tool={tool} />)
     await userEvent.click(screen.getByRole('tab', { name: 'Source operation' }))
     expect(screen.getByTestId('pane-source')).toHaveTextContent('listSupportTickets')
   })
 
-  it('states that the canonical format is project-defined, not a standard', () => {
+  it('states that the canonical format is project-defined, not a standard', async () => {
     render(<TransformationView operation={operation} tool={tool} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Tool definition' }))
     expect(screen.getByText(/not an industry standard/i)).toBeInTheDocument()
   })
 
   it('explains the provider projection rather than showing nothing', async () => {
     render(<TransformationView operation={operation} tool={tool} />)
-    await userEvent.click(screen.getByRole('tab', { name: 'OpenAI projection' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'OpenAI' }))
     expect(screen.getByText(/widened to accept/i)).toBeInTheDocument()
     expect(screen.getByTestId('pane-openai')).toHaveTextContent('Publish this connector')
   })
@@ -100,7 +112,7 @@ describe('TransformationView', () => {
         }}
       />,
     )
-    await userEvent.click(screen.getByRole('tab', { name: 'OpenAI projection' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'OpenAI' }))
     expect(screen.getByTestId('pane-openai')).toHaveTextContent('"strict": true')
   })
 })

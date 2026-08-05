@@ -57,6 +57,9 @@ export function OperationReviewCard({
 
   const included = review.selection === 'included'
 
+  // Only the selected operation expands. With every card open the list becomes a wall of form
+  // controls and the reviewer loses the sense of "here is the set, here is the one I am
+  // looking at" — which is the thing the review step exists to give them.
   return (
     <li
       className={
@@ -70,9 +73,13 @@ export function OperationReviewCard({
         <span className="path">{operation.path}</span>
         <code className="tool-name">{tool.tool_name}</code>
         <span className={`badge badge--${review.effect_class}`}>{review.effect_class}</span>
-        {review.access_mode === 'restricted' && <span className="badge badge--locked">restricted</span>}
+        {review.access_mode === 'restricted' && (
+          <span className="badge badge--locked">restricted</span>
+        )}
+        {!included && <span className="badge badge--excluded">not published</span>}
       </button>
 
+      {selected && (
       <div className="operation__body">
         <label className="field field--inline">
           <input
@@ -214,6 +221,7 @@ export function OperationReviewCard({
           </ul>
         )}
       </div>
+      )}
     </li>
   )
 }

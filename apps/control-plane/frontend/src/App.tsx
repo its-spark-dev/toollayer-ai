@@ -16,6 +16,7 @@ import type {
   Draft,
   ReviewUpdate,
   SnapshotSummary,
+  ToolDefinition,
   VersionSummary,
 } from './api/types'
 import { OperationReviewCard } from './components/OperationReviewCard'
@@ -27,6 +28,26 @@ const DEPLOYMENT_KEY = 'demo-workspace'
 
 type Stage = 'register' | 'review' | 'publish' | 'deploy'
 
+/**
+ * Pick the operation to open first after analysis.
+ *
+ * Opening whichever operation happens to sort first is a poor introduction — it is often a
+ * parameterless list endpoint whose generated schema is empty, which makes the conversion look
+ * like it did nothing. Preferring the operation with the most arguments shows a reviewer what
+ * the converter actually produces: named properties, enums, bounds, and bindings.
+ */
+function mostIllustrative(draft: Draft): string | null {
+  const convertible = draft.analysis.operations.filter((entry) => entry.tool)
+  if (convertible.length === 0) return null
+  const scored = convertible
+    .map((entry) => ({
+      key: entry.key,
+      arguments: Object.keys(entry.tool?.input_schema.properties ?? {}).length,
+    }))
+    .sort((a, b) => b.arguments - a.arguments || a.key.localeCompare(b.key))
+  return scored[0]?.key ?? null
+}
+
 export default function App() {
   const client = useMemo(() => new ControlPlaneClient(defaultConfig()), [])
 
@@ -37,6 +58,7 @@ export default function App() {
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([])
   const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([])
   const [projections, setProjections] = useState<Record<string, AdapterProjection>>({})
+  const [publishedDocument, setPublishedDocument] = useState<Record<string, unknown> | null>(null)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [document, setDocument] = useState(SAMPLE_SPEC)
   const [busy, setBusy] = useState(false)
@@ -73,17 +95,14 @@ export default function App() {
     setConnectors(await client.listConnectors())
   }, [client])
 
-  useEffect(() => {
-    void run(async () => {
-      await refreshConnectors()
-    })
-  }, [run, refreshConnectors])
 
   const loadVersions = useCallback(async () => {
     const list = await client.listVersions(CONNECTOR_KEY)
     setVersions(list)
     const latest = list.at(-1)
     if (latest) {
+      const stored = await client.getVersion(CONNECTOR_KEY, latest.version)
+      setPublishedDocument(stored.document)
       const entries = await Promise.all(
         ['openai', 'anthropic'].map(async (provider) => {
           const projection = await client.getAdapterProjection(
@@ -98,6 +117,24 @@ export default function App() {
     }
   }, [client])
 
+  // Load what already exists on mount. Without this the Publish and Deploy stages look empty
+  // until the current session happens to publish something — which is wrong for anyone opening
+  // the console against a Control Plane that has been used before.
+  useEffect(() => {
+    void run(async () => {
+      await refreshConnectors()
+      const published = await client.listVersions(CONNECTOR_KEY).catch(() => [])
+      if (published.length > 0) {
+        await loadVersions()
+      }
+      const existing = await client.listDeployments().catch(() => [])
+      setDeployments(existing)
+      if (existing.some((entry) => entry.deployment_key === DEPLOYMENT_KEY)) {
+        setSnapshots(await client.listSnapshots(DEPLOYMENT_KEY).catch(() => []))
+      }
+    })
+  }, [run, refreshConnectors, client, loadVersions])
+
   const register = () =>
     run(async () => {
       const created = await client.registerConnector({
@@ -106,7 +143,7 @@ export default function App() {
         document_filename: 'support-api.openapi.yaml',
       })
       setDraft(created)
-      setSelectedKey(created.analysis.operations.find((entry) => entry.tool)?.key ?? null)
+      setSelectedKey(mostIllustrative(created))
       setStage('review')
       setNotice(
         `Analyzed ${created.analysis.operations.length} operations from ${created.source.byte_length} bytes.`,
@@ -158,7 +195,25 @@ export default function App() {
     })
 
   const selected = draft?.analysis.operations.find((entry) => entry.key === selectedKey) ?? null
-  const selectedReview = draft?.review.operations.find((entry) => entry.operation_key === selectedKey)
+  const selectedReview = draft?.review.operations.find(
+    (entry) => entry.operation_key === selectedKey,
+  )
+
+  // What the active snapshot actually contains, read back from the published documents rather
+  // than from what the console believes it sent. This is the same set the Runtime will serve.
+  const servedTools = useMemo(() => {
+    const latest = versions.at(-1)
+    if (!latest || !publishedDocument) return []
+    const tools = (publishedDocument.tools ?? []) as ToolDefinition[]
+    return tools.map((tool) => ({
+      tool_name: tool.tool_name,
+      description: tool.description,
+      effect_class: tool.policy.effect_class,
+      requires_confirmation: tool.policy.requires_confirmation,
+      restricted: tool.policy.access.access_mode === 'restricted',
+      allowed_roles: tool.policy.access.allowed_roles,
+    }))
+  }, [versions, publishedDocument])
 
   return (
     <div className="app">
@@ -370,6 +425,35 @@ export default function App() {
                 Deployment <code>{DEPLOYMENT_KEY}</code> is serving revision{' '}
                 {deployments[0]?.active_revision ?? '—'}.
               </p>
+            )}
+
+            {servedTools.length > 0 && (
+              <>
+                <h3 className="subhead">Tools this deployment may serve</h3>
+                <p className="hint">
+                  Exactly this set, from exactly these versions. The Runtime resolves a tool name
+                  against the snapshot and refuses anything that is not here.
+                </p>
+                <ul className="served">
+                  {servedTools.map((tool) => (
+                    <li key={tool.tool_name} className="served__item">
+                      <code className="tool-name">{tool.tool_name}</code>
+                      <span className={`badge badge--${tool.effect_class}`}>
+                        {tool.effect_class}
+                      </span>
+                      {tool.restricted && (
+                        <span className="badge badge--locked">
+                          {tool.allowed_roles.join(', ')}
+                        </span>
+                      )}
+                      {tool.requires_confirmation && (
+                        <span className="badge badge--confirm">confirmation</span>
+                      )}
+                      <span className="served__desc">{tool.description}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </section>
         )}
