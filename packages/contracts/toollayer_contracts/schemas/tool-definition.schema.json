@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.toollayer.example/v1/tool-definition.schema.json",
+  "title": "ToolLayer Tool Definition",
+  "description": "A provider-neutral, model-facing tool definition bound to one reviewed HTTP operation. This contract is defined by this project. It is not an industry standard.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tool_name",
+    "display_name",
+    "description",
+    "input_schema",
+    "operation",
+    "policy",
+    "provenance"
+  ],
+  "properties": {
+    "tool_name": {
+      "$ref": "#/$defs/tool_name"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Human-facing label shown in the console. Never used for dispatch."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Model-facing explanation of what the tool does and when to use it."
+    },
+    "input_schema": {
+      "$ref": "#/$defs/tool_input_schema"
+    },
+    "operation": {
+      "$ref": "#/$defs/tool_operation"
+    },
+    "policy": {
+      "$ref": "#/$defs/tool_policy"
+    },
+    "provenance": {
+      "$ref": "#/$defs/tool_provenance"
+    }
+  },
+  "$defs": {
+    "tool_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Stable dispatch identifier, unique within a connector version."
+    },
+    "json_pointer": {
+      "type": "string",
+      "pattern": "^(?:/(?:[^~/]|~[01])*)*$",
+      "description": "An RFC 6901 JSON Pointer. The empty string addresses the whole document."
+    },
+    "tool_input_schema": {
+      "type": "object",
+      "description": "A closed JSON Schema Draft 2020-12 object schema describing the tool arguments.",
+      "required": ["$schema", "type", "properties", "required", "additionalProperties"],
+      "properties": {
+        "$schema": {
+          "const": "https://json-schema.org/draft/2020-12/schema"
+        },
+        "type": {
+          "const": "object"
+        },
+        "properties": {
+          "type": "object"
+        },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "additionalProperties": {
+          "const": false,
+          "description": "Arguments the schema does not declare are always rejected."
+        }
+      },
+      "additionalProperties": true
+    },
+    "argument_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argument_pointer", "target", "target_name"],
+      "properties": {
+        "argument_pointer": {
+          "$ref": "#/$defs/json_pointer",
+          "description": "Where the value is read from inside the validated tool arguments."
+        },
+        "target": {
+          "type": "string",
+          "enum": ["path", "query", "header", "body"],
+          "description": "Which part of the outbound HTTP request receives the value."
+        },
+        "target_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Literal parameter name for path, query, and header targets; an RFC 6901 pointer into the outbound JSON body for body targets."
+        }
+      }
+    },
+    "tool_operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "method", "path_template", "bindings", "request_body_media_type"],
+      "properties": {
+        "protocol": { "const": "http" },
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+          "description": "Outbound HTTP method. The runtime applies its own method allowlist on top of this."
+        },
+        "path_template": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^/(?:[^/?#\\s][^?#\\s]*)?$",
+          "description": "Origin-relative path with {placeholder} segments. Absolute and scheme-relative destinations are forbidden."
+        },
+        "bindings": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/argument_binding" }
+        },
+        "request_body_media_type": {
+          "type": ["string", "null"],
+          "enum": ["application/json", null],
+          "description": "Outbound body media type, or null when the operation sends no body."
+        }
+      }
+    },
+    "tool_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effect_class", "requires_confirmation", "access"],
+      "properties": {
+        "effect_class": {
+          "type": "string",
+          "enum": ["read", "write", "destructive"],
+          "description": "What calling this tool does to the upstream system."
+        },
+        "requires_confirmation": {
+          "type": "boolean",
+          "description": "Whether a client must obtain explicit user confirmation before execution."
+        },
+        "access": { "$ref": "#/$defs/tool_access_policy" }
+      }
+    },
+    "role_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "description": "A stable role identifier. Never a display label and never compared as free text."
+    },
+    "tool_access_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["access_mode", "allowed_roles"],
+      "description": "Per-tool role restriction. 'public' means every caller of this deployment may use the tool; 'restricted' means the caller must hold one of the listed roles.",
+      "properties": {
+        "access_mode": {
+          "type": "string",
+          "enum": ["public", "restricted"]
+        },
+        "allowed_roles": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/role_key" },
+          "description": "Entries are OR. Must be empty when access_mode is 'public' and non-empty when it is 'restricted'."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "access_mode": { "const": "restricted" } },
+            "required": ["access_mode"]
+          },
+          "then": {
+            "properties": { "allowed_roles": { "minItems": 1 } }
+          },
+          "else": {
+            "properties": { "allowed_roles": { "maxItems": 0 } }
+          }
+        }
+      ]
+    },
+    "tool_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_operation_id",
+        "source_path",
+        "source_method",
+        "tags",
+        "deprecated",
+        "description_origin"
+      ],
+      "properties": {
+        "source_operation_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
+          "description": "The source operationId when the document declared one, otherwise null. Never invented."
+        },
+        "source_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "source_method": {
+          "type": "string",
+          "enum": ["get", "post", "put", "patch", "delete"]
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "deprecated": { "type": "boolean" },
+        "description_origin": {
+          "type": "string",
+          "enum": ["source", "generated", "assisted", "human"],
+          "description": "Where the published description came from. 'assisted' means a model proposed it and a human accepted it."
+        }
+      }
+    }
+  }
+}

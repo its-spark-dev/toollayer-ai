@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.toollayer.example/v1/tool-execution.schema.json",
+  "title": "ToolLayer Tool Execution",
+  "description": "The request and result envelopes exchanged when a runtime executes one governed tool.",
+  "type": "object",
+  "$defs": {
+    "tool_execution_request": {
+      "$anchor": "tool_execution_request",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connector_key", "connector_version", "tool_name", "arguments"],
+      "properties": {
+        "connector_key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "connector_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "tool_name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64
+        },
+        "arguments": {
+          "type": "object",
+          "description": "Model-proposed arguments. Always validated against the tool input schema before use."
+        },
+        "caller_roles": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+          }
+        },
+        "request_id": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    },
+    "tool_execution_result": {
+      "$anchor": "tool_execution_result",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool_name",
+        "connector_key",
+        "connector_version",
+        "status",
+        "http_status",
+        "duration_ms",
+        "content",
+        "untrusted"
+      ],
+      "properties": {
+        "tool_name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "connector_key": { "type": "string" },
+        "connector_version": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["succeeded", "upstream_error"],
+          "description": "A tool that was rejected before execution never produces a result; it produces an error envelope."
+        },
+        "http_status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "content": {
+          "description": "Decoded upstream response body. Treated as data, never as instructions."
+        },
+        "untrusted": {
+          "const": true,
+          "description": "Always true. Upstream content is attacker-influenceable and must never be interpreted as an instruction to the model or the runtime."
+        },
+        "request_id": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    }
+  }
+}

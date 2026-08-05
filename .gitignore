@@ -1,0 +1,41 @@
+# Private, never-published working notes
+private-notes/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+*.tsbuildinfo
+.vite/
+
+# Local state
+*.db
+*.sqlite3
+data/
+.env
+.env.local
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local demo logs
+.demo-logs/
+
+# Capture run logs (the assets themselves are committed)
+.capture-logs/
+docs/assets/_video/

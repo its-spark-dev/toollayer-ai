@@ -1,0 +1,119 @@
+"""Initial Control Plane schema.
+
+Creates the five tables the Control Plane owns. The distinction the schema is built around
+is mutable versus immutable: `connectors` and `connector_drafts` are updated in place under
+optimistic concurrency, while `published_versions` and `deployment_snapshots` are insert-only
+artifacts whose uniqueness rules are database constraints rather than application checks.
+
+
+Revision ID: bb270ecf8261
+Revises: (none — this is the initial revision)
+Create Date: 2026-08-05 13:06:52.311595
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "bb270ecf8261"
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "connectors",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("connector_key", sa.String(length=64), nullable=False),
+        sa.Column("display_name", sa.String(length=128), nullable=False),
+        sa.Column("summary", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("connector_key"),
+    )
+    op.create_table(
+        "deployments",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("deployment_key", sa.String(length=64), nullable=False),
+        sa.Column("display_name", sa.String(length=128), nullable=False),
+        sa.Column("description", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("deployment_key"),
+    )
+    op.create_table(
+        "connector_drafts",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("connector_id", sa.Integer(), nullable=False),
+        sa.Column("revision", sa.Integer(), nullable=False),
+        sa.Column("proposed_version", sa.String(length=64), nullable=False),
+        sa.Column("base_url", sa.String(length=2048), nullable=True),
+        sa.Column("auth_profile_ref", sa.String(length=256), nullable=True),
+        sa.Column("source_bytes", sa.LargeBinary(), nullable=False),
+        sa.Column("source_filename", sa.String(length=256), nullable=False),
+        sa.Column("source_digest", sa.String(length=80), nullable=False),
+        sa.Column("source_byte_length", sa.Integer(), nullable=False),
+        sa.Column("source_format", sa.String(length=8), nullable=False),
+        sa.Column("spec_version", sa.String(length=16), nullable=False),
+        sa.Column("analyzer_version", sa.String(length=64), nullable=False),
+        sa.Column("analysis", sa.JSON(), nullable=False),
+        sa.Column("review", sa.JSON(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["connector_id"], ["connectors.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("connector_id", name="uq_draft_per_connector"),
+    )
+    op.create_table(
+        "deployment_snapshots",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("deployment_id", sa.Integer(), nullable=False),
+        sa.Column("revision", sa.Integer(), nullable=False),
+        sa.Column("snapshot_id", sa.String(length=64), nullable=False),
+        sa.Column("document", sa.JSON(), nullable=False),
+        sa.Column("snapshot_digest", sa.String(length=80), nullable=False),
+        sa.Column("connector_count", sa.Integer(), nullable=False),
+        sa.Column("active", sa.Boolean(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("created_by", sa.String(length=128), nullable=False),
+        sa.ForeignKeyConstraint(["deployment_id"], ["deployments.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("deployment_id", "revision", name="uq_deployment_revision"),
+        sa.UniqueConstraint("snapshot_id", name="uq_snapshot_id"),
+    )
+    op.create_table(
+        "published_versions",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("connector_id", sa.Integer(), nullable=False),
+        sa.Column("version", sa.String(length=64), nullable=False),
+        sa.Column("document", sa.JSON(), nullable=False),
+        sa.Column("document_digest", sa.String(length=80), nullable=False),
+        sa.Column("source_digest", sa.String(length=80), nullable=False),
+        sa.Column("analyzer_version", sa.String(length=64), nullable=False),
+        sa.Column("tool_count", sa.Integer(), nullable=False),
+        sa.Column("published_at", sa.DateTime(), nullable=False),
+        sa.Column("published_by", sa.String(length=128), nullable=False),
+        sa.Column("disabled_at", sa.DateTime(), nullable=True),
+        sa.Column("disabled_reason", sa.String(length=512), nullable=True),
+        sa.ForeignKeyConstraint(["connector_id"], ["connectors.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("connector_id", "version", name="uq_connector_version"),
+    )
+    with op.batch_alter_table("published_versions", schema=None) as batch_op:
+        batch_op.create_index("ix_published_versions_connector", ["connector_id"], unique=False)
+
+
+def downgrade() -> None:
+    with op.batch_alter_table("published_versions", schema=None) as batch_op:
+        batch_op.drop_index("ix_published_versions_connector")
+
+    op.drop_table("published_versions")
+    op.drop_table("deployment_snapshots")
+    op.drop_table("connector_drafts")
+    op.drop_table("deployments")
+    op.drop_table("connectors")

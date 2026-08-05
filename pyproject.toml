@@ -1,0 +1,125 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "toollayer-ai"
+version = "0.1.0"
+description = "An OpenAPI-to-tool control plane and reference runtime for safe, provider-neutral LLM orchestration."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Sang Park" }]
+keywords = ["openapi", "llm", "tool-calling", "control-plane", "json-schema"]
+
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "jsonschema>=4.21",
+    "PyYAML>=6.0",
+    "SQLAlchemy>=2.0",
+    "alembic>=1.13",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-PyYAML>=6.0",
+    "types-jsonschema>=4.21",
+]
+postgres = ["psycopg[binary]>=3.1"]
+# Only needed to regenerate the README screenshots; not required to run or test anything.
+capture = ["playwright>=1.44"]
+
+[project.scripts]
+toollayer-runtime = "runtime_service.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "packages/contracts/toollayer_contracts",
+    "packages/openapi-converter/toollayer_openapi",
+    "packages/policy-engine/toollayer_policy",
+    "packages/mock-llm/toollayer_mock_llm",
+    "apps/control-plane/backend/control_plane",
+    "apps/runtime/runtime_service",
+    "apps/demo-api/demo_api",
+]
+
+# The JSON Schemas live inside the `toollayer_contracts` package directory, so they are
+# already carried by the entry above. A `force-include` for them would add the same paths a
+# second time, which hatchling rejects — and which made `pip install .` from a clone fail
+# while the editable install kept working.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [
+    "packages/contracts",
+    "packages/openapi-converter",
+    "packages/policy-engine",
+    "packages/mock-llm",
+    "apps/control-plane/backend",
+    "apps/runtime",
+    "apps/demo-api",
+]
+addopts = "-q --strict-markers"
+markers = [
+    "unit: isolated behavior of a single module",
+    "contract: cross-service contract compatibility",
+    "integration: several components wired together",
+    "security: a control that must reject something",
+    "e2e: the full demo flow",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = [
+    "packages/contracts",
+    "packages/openapi-converter",
+    "packages/policy-engine",
+    "packages/mock-llm",
+    "apps/control-plane/backend",
+    "apps/runtime",
+    "apps/demo-api",
+    "tests",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    # FastAPI dependency injection is expressed with calls in argument defaults.
+    "B008",
+    # Exception classes here are named for the outcome they describe — PolicyDenied,
+    # ConfirmationRequired, NoToolSelected. Those read correctly at the raise site and in a
+    # traceback; an "Error" suffix would add a word without adding meaning.
+    "N818",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+mypy_path = [
+    "packages/contracts",
+    "packages/openapi-converter",
+    "packages/policy-engine",
+    "packages/mock-llm",
+    "apps/control-plane/backend",
+    "apps/runtime",
+    "apps/demo-api",
+]
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false

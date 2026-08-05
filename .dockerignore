@@ -1,0 +1,13 @@
+.git
+.venv
+node_modules
+private-notes
+data
+dist
+.demo-logs
+.pytest_cache
+.ruff_cache
+.mypy_cache
+**/__pycache__
+*.db
+.env
