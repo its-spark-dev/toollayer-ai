@@ -25,6 +25,17 @@ produces plausible output rather than correct output.
 **ToolLayer AI turns an OpenAPI document into a reviewed, versioned, digest-verified artifact,
 and gives a runtime the machinery to execute only that — under policy.**
 
+![The Tool Control Plane's review console. On the left, the source OpenAPI operation
+listSupportTickets with its status parameter referencing a shared TicketStatus schema. On the
+right, the generated provider-neutral tool definition: tool_name list_support_tickets, a closed
+JSON Schema Draft 2020-12 input schema, and the status enum resolved inline from the
+reference.](docs/assets/00-hero.png)
+
+<sub>**One OpenAPI operation in, one governed tool definition out.** The `$ref` is resolved, the
+input schema is closed, and the model-facing description is separated from the execution
+details the model never sees. Conversion is deterministic — the same document always produces
+the same tools, which is what makes the published digest mean something.</sub>
+
 ## Architecture
 
 ```mermaid
@@ -167,9 +178,69 @@ docker compose up -d --build && make demo-docker
 
 Then open the console at <http://localhost:5173>.
 
-> **Screenshots.** _[GIF placeholder: the review console, showing the source operation and the
-> generated tool definition side by side.]_ · _[GIF placeholder: `make demo` running end to
-> end.]_
+### The pipeline, end to end
+
+Every image below is produced by `make capture`, which drives the running application with
+Playwright and writes to `docs/assets/`. Nothing here is mocked up by hand, so an image that
+stops matching the code fails the capture rather than quietly going stale.
+
+**1 · Register** — upload an OpenAPI 3.0 or 3.1 document. The exact bytes and their SHA-256
+digest are kept, and every operation is analyzed. Nothing is published yet.
+
+![The Register stage of the console, showing the Sample Support API OpenAPI document pasted
+into a text area above an Analyze document button.](docs/assets/01-register.png)
+
+**2 · Review** — a human decides what becomes a tool, what it says, and who may call it. The
+source operation and the generated definition sit side by side, so the transformation is
+auditable rather than a black box.
+
+![The Review stage. A list of six analyzed operations on the left with method, path, generated
+tool name and effect class; the selected operation expanded to show its editable description,
+effect, confirmation requirement and role restriction. On the right, the source operation and
+generated tool definition side by side.](docs/assets/02-review-transformation.png)
+
+**3 · Provider projections** — the same definition projected into two public tool formats. Two
+adapters, not one: a single adapter would prove nothing, because the canonical format could
+just be that provider's format renamed.
+
+![The OpenAI projection tab showing the tool rendered as an OpenAI function payload with strict
+set to true, alongside an explanation that optional arguments are widened to accept null and
+that the runtime reverses this before validating against the canonical
+schema.](docs/assets/03-provider-projection.png)
+
+**4 · Publish** — an immutable version, verified by SHA-256 over its canonical JSON. Changing
+it means publishing a new version.
+
+![The Publish stage listing published versions in a table with version, tool count, document
+digest, publication timestamp and lifecycle state.](docs/assets/04-published-versions.png)
+
+**5 · Deploy** — a snapshot pins exactly one published version per connector and is never
+edited. A change creates the next revision; the previous one stays byte-identical.
+
+![The Deploy stage showing two snapshot revisions, the older marked superseded and the newer
+active, each with its own content-derived identifier and digest. Below, the exact set of tools
+the deployment may serve, with effect-class, role-restriction and confirmation badges — the
+status-change tool marked write, support-lead and confirmation.](docs/assets/05-deployment-snapshot.png)
+
+**6 · Execute** — the Runtime loads the snapshot, verifies its digest, and runs one governed
+tool call.
+
+![A terminal showing a natural-language request resolved into a governed execution: the tool
+selected from four the caller may use with one hidden by policy, generated arguments, schema
+validation, policy evaluation, an HTTP 200 upstream call, and a note that upstream content is
+marked untrusted and never read as an instruction.](docs/assets/06-runtime-execution.png)
+
+**7 · Refuse** — the same caller naming a restricted tool directly, bypassing discovery
+entirely.
+
+![A terminal showing a support-agent calling the restricted status-change tool directly and
+receiving HTTP 403 role_not_permitted, with a note that the tool exists and the arguments are
+valid but authorization is a separate step, followed by the four tools the caller may
+use.](docs/assets/07-runtime-rejection.png)
+
+<sub>▶ [Watch the console walkthrough](docs/assets/control-plane-walkthrough.webm) (WebM, ~25s,
+no audio) — registering a document, restricting a tool to a role, publishing, and snapshotting,
+recorded from the running console.</sub>
 
 ## Tool Control Plane
 
