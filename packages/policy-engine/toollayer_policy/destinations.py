@@ -42,7 +42,9 @@ __all__ = [
     "normalize_origin",
 ]
 
-DEFAULT_ALLOWED_METHODS: Final[frozenset[str]] = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
+DEFAULT_ALLOWED_METHODS: Final[frozenset[str]] = frozenset(
+    {"GET", "POST", "PUT", "PATCH", "DELETE"}
+)
 
 _DEFAULT_PORTS: Final[dict[str, int]] = {"http": 80, "https": 443}
 
@@ -67,8 +69,10 @@ class SystemDnsResolver(DnsResolver):
             ) from None
         addresses: list[str] = []
         for info in infos:
+            # getaddrinfo returns sockaddr tuples whose first element is the address for
+            # both IPv4 and IPv6; anything else is not something this policy can check.
             address = info[4][0]
-            if address not in addresses:
+            if isinstance(address, str) and address not in addresses:
                 addresses.append(address)
         if not addresses:
             raise PolicyDenied(
@@ -258,8 +262,12 @@ class DestinationPolicy:
                 ErrorCode.PRIVATE_ADDRESS_BLOCKED,
                 "the destination resolves to a link-local address",
             )
-        if parsed.is_private and not self.allow_private_addresses:
+        # The final check is "is this globally routable", not "is this in RFC 1918". Framing
+        # it positively catches carrier-grade NAT, the documentation ranges, and anything
+        # else a future address allocation makes non-routable, without this module needing
+        # to be taught about each one.
+        if not parsed.is_global and not self.allow_private_addresses:
             raise PolicyDenied(
                 ErrorCode.PRIVATE_ADDRESS_BLOCKED,
-                "the destination resolves to a private address",
+                "the destination resolves to an address that is not globally routable",
             )

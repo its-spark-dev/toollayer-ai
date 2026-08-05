@@ -213,6 +213,6 @@ def _decode(body: bytes, headers: dict[str, str]) -> Any:
 
     try:
         text = body.decode("utf-8", errors="replace")
-    except Exception:  # noqa: BLE001 - decoding must never raise into the caller
+    except Exception:
         return {"encoding": "binary", "byte_length": len(body)}
     return {"content_type": content_type or "unknown", "text": text[:_MAX_RESPONSE_PREVIEW]}

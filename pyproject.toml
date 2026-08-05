@@ -88,7 +88,14 @@ src = [
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
-ignore = ["B008"]
+ignore = [
+    # FastAPI dependency injection is expressed with calls in argument defaults.
+    "B008",
+    # Exception classes here are named for the outcome they describe — PolicyDenied,
+    # ConfirmationRequired, NoToolSelected. Those read correctly at the raise site and in a
+    # traceback; an "Error" suffix would add a word without adding meaning.
+    "N818",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501"]

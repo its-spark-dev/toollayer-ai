@@ -51,7 +51,10 @@ def _render(status: int, body: Any, *, verbose: bool) -> int:
         print(f"{len(body['tools'])} tool(s) available to {body.get('caller') or 'anonymous'}:")
         for tool in body["tools"]:
             marker = "!" if tool["effect_class"] != "read" else " "
-            print(f" {marker} {tool['tool_name']:34} {tool['effect_class']:12} {tool['display_name']}")
+            print(
+                f" {marker} {tool['tool_name']:34} "
+                f"{tool['effect_class']:12} {tool['display_name']}"
+            )
         return 0
 
     print(f"tool      : {body.get('selected_tool')}")
@@ -59,7 +62,10 @@ def _render(status: int, body: Any, *, verbose: bool) -> int:
     print(f"arguments : {json.dumps(body.get('arguments', {}), sort_keys=True)}")
     result = body.get("result")
     if result:
-        print(f"upstream  : HTTP {result['http_status']} in {result['duration_ms']} ms (untrusted content)")
+        print(
+            f"upstream  : HTTP {result['http_status']} in "
+            f"{result['duration_ms']} ms (untrusted content)"
+        )
     print()
     print(body.get("message", ""))
     if verbose:

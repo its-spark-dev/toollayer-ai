@@ -20,7 +20,7 @@ from toollayer_openapi.errors import ConversionError, Diagnostic, InvalidDocumen
 from toollayer_openapi.loader import LoadedDocument, SourceLimits
 from toollayer_openapi.references import ReferenceResolver
 
-__all__ = ["AnalysisResult", "AnalyzedOperation", "ANALYZER_VERSION", "analyze_document"]
+__all__ = ["ANALYZER_VERSION", "AnalysisResult", "AnalyzedOperation", "analyze_document"]
 
 #: Bumped whenever conversion output changes for an unchanged input. Recorded on every
 #: analysis so a stored draft always says which converter produced it — otherwise a draft

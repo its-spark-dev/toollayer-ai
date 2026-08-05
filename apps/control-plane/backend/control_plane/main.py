@@ -19,12 +19,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from toollayer_contracts import CONTRACT_VERSION
-from toollayer_contracts.errors import ErrorCode, ErrorEnvelope, ToolLayerError
 from control_plane.config import get_settings
 from control_plane.db import create_schema, get_engine
 from control_plane.routes_admin import router as admin_router
 from control_plane.routes_internal import router as internal_router
+from toollayer_contracts import CONTRACT_VERSION
+from toollayer_contracts.errors import ErrorCode, ErrorDetail, ErrorEnvelope, ToolLayerError
+from toollayer_openapi import ConversionError
 
 __all__ = ["app", "create_app"]
 
@@ -62,18 +63,37 @@ def create_app(*, create_tables: bool = True) -> FastAPI:
 
     @app.exception_handler(ToolLayerError)
     async def _domain_error(request: Request, exc: ToolLayerError) -> JSONResponse:
-        envelope = exc.to_envelope(getattr(request.state, "request_id", None))
-        issues = getattr(exc, "issues", None)
-        body = envelope.to_dict()
-        if issues:
-            # Publication readiness reports several blocking issues at once. They are
-            # surfaced so the console can list every one instead of revealing them one
-            # failed publish at a time.
-            body["error"]["details"] = [
-                {"code": "publication.blocked", "message": issue, "severity": "error"}
-                for issue in issues
-            ]
-        return JSONResponse(status_code=exc.http_status, content=body)
+        issues: tuple[str, ...] = getattr(exc, "issues", ())
+        # Publication readiness reports several blocking issues at once. They are surfaced
+        # so the console can list every one instead of discovering them one failed publish
+        # at a time.
+        details = tuple(
+            ErrorDetail(code="publication.blocked", message=issue) for issue in issues
+        )
+        envelope = ErrorEnvelope(
+            code=exc.code,
+            message=exc.message,
+            pointer=exc.pointer,
+            details=exc.details or details,
+            request_id=getattr(request.state, "request_id", None),
+        )
+        return JSONResponse(status_code=exc.http_status, content=envelope.to_dict())
+
+    @app.exception_handler(ConversionError)
+    async def _conversion_error(request: Request, exc: ConversionError) -> JSONResponse:
+        """Translate the converter's own errors into the shared envelope.
+
+        The converter package is a library with its own error taxonomy and no knowledge of
+        HTTP. Translating here keeps that separation while still giving every failure from
+        every route the same shape and the same pointer-into-the-document convention.
+        """
+        envelope = ErrorEnvelope(
+            code=exc.code,
+            message=exc.message,
+            pointer=exc.pointer,
+            request_id=getattr(request.state, "request_id", None),
+        )
+        return JSONResponse(status_code=envelope.http_status, content=envelope.to_dict())
 
     @app.exception_handler(RequestValidationError)
     async def _request_validation(

@@ -43,7 +43,8 @@ class RegisterConnectorRequest(_Request):
     connector_key: ResourceKey
     display_name: str | None = Field(default=None, max_length=128)
     summary: str | None = Field(default=None, max_length=1024)
-    proposed_version: SemanticVersion = "0.1.0"
+    #: Omit to let the Control Plane suggest the next version from what is published.
+    proposed_version: SemanticVersion | None = None
     base_url: str | None = Field(default=None, max_length=2048)
     auth_profile_ref: str | None = Field(default=None, max_length=256)
     #: The API description, as UTF-8 text. Sent inline rather than as a multipart upload so

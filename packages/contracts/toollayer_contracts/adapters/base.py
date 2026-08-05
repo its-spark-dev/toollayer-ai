@@ -26,11 +26,11 @@ from typing import Any, Final
 from toollayer_contracts.models import ToolDefinition
 
 __all__ = [
+    "SUPPORTED_SCHEMA_KEYWORDS",
     "AdapterDiagnostic",
     "AdapterError",
     "ProviderAdapter",
     "ProviderProjection",
-    "SUPPORTED_SCHEMA_KEYWORDS",
     "walk_schema",
 ]
 

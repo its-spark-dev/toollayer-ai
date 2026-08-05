@@ -23,13 +23,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from toollayer_contracts import CONTRACT_VERSION
-from toollayer_contracts.errors import ErrorCode, ErrorEnvelope, ToolLayerError
-from toollayer_policy import CallerIdentity, ToolExecutor
-from toollayer_mock_llm import MockLLMProvider
 from runtime_service.config import RuntimeSettings, get_settings
 from runtime_service.orchestrator import OrchestrationOutcome, Orchestrator
 from runtime_service.snapshot import SnapshotClient, SnapshotStore
+from toollayer_contracts import CONTRACT_VERSION
+from toollayer_contracts.errors import ErrorCode, ErrorEnvelope, ToolLayerError
+from toollayer_mock_llm import MockLLMProvider
+from toollayer_policy import CallerIdentity, ToolExecutor
 
 __all__ = ["app", "build_orchestrator", "create_app"]
 
@@ -165,7 +165,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     @app.get("/readyz", tags=["operations"])
     async def readyz() -> JSONResponse:
         """Ready means a verified snapshot is loaded. Without one, no tool can be served."""
-        store: SnapshotStore = engine._store  # noqa: SLF001 - readiness inspects its own state
+        store: SnapshotStore = engine._store
         if not store.loaded:
             try:
                 store.refresh()
@@ -239,7 +239,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     @app.post("/v1/snapshot/refresh", tags=["operations"])
     async def refresh_snapshot() -> dict[str, Any]:
         """Force a snapshot refresh instead of waiting for the interval."""
-        store: SnapshotStore = engine._store  # noqa: SLF001
+        store: SnapshotStore = engine._store
         snapshot = store.refresh()
         return {
             "snapshot_revision": snapshot.revision,

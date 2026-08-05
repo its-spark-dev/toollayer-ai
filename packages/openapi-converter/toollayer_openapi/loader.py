@@ -110,7 +110,7 @@ _NoDuplicateKeyLoader.add_constructor(
 
 def _parse_yaml(text: str) -> Any:
     try:
-        return yaml.load(text, Loader=_NoDuplicateKeyLoader)  # noqa: S506 - loader is safe
+        return yaml.load(text, Loader=_NoDuplicateKeyLoader)
     except InvalidDocumentError:
         raise
     except yaml.YAMLError:
@@ -140,9 +140,10 @@ def _enforce_shape(node: object, limits: SourceLimits) -> None:
         elif isinstance(current, list):
             for item in current:
                 stack.append((item, depth + 1))
-        elif isinstance(current, float):
-            if current != current or current in (float("inf"), float("-inf")):
-                raise InvalidDocumentError("the document contains a non-finite number")
+        elif isinstance(current, float) and (
+            current != current or current in (float("inf"), float("-inf"))
+        ):
+            raise InvalidDocumentError("the document contains a non-finite number")
 
 
 def load_document(

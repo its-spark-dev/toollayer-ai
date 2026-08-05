@@ -62,7 +62,7 @@ _SELECTION_THRESHOLD: Final = 2.0
 _MUTATION_VERBS: Final[frozenset[str]] = frozenset(
     {
         "add", "assign", "cancel", "change", "close", "create", "delete", "edit", "file",
-        "hand", "modify", "move", "new", "open", "purge", "raise", "reassign", "remove",
+        "hand", "mark", "modify", "move", "new", "purge", "raise", "reassign", "remove",
         "reopen", "replace", "resolve", "set", "update",
     }
 )
@@ -164,7 +164,9 @@ class MockLLMProvider(LLMProvider):
         """
         name_words = frozenset(_TOKEN.findall(tool.tool_name))
         description_words = _content_words(tool.description)
-        tag_words = frozenset(word for tag in tool.provenance.tags for word in _TOKEN.findall(tag.lower()))
+        tag_words = frozenset(
+            word for tag in tool.provenance.tags for word in _TOKEN.findall(tag.lower())
+        )
         argument_words = frozenset(
             word
             for argument in tool.input_schema.get("properties", {})
@@ -324,7 +326,7 @@ def _effect_verbs(tool_name: str) -> frozenset[str]:
     head = tool_name.split("_", 1)[0]
     synonyms: dict[str, tuple[str, ...]] = {
         "assign": ("assign", "assigned", "give", "hand", "reassign"),
-        "change": ("change", "set", "move", "update", "close", "reopen", "resolve"),
+        "change": ("change", "set", "mark", "move", "update", "close", "reopen", "resolve"),
         "update": ("update", "change", "set", "edit", "modify"),
         "create": ("create", "add", "open", "file", "raise", "new"),
         "delete": ("delete", "remove", "drop", "purge"),
@@ -335,8 +337,16 @@ def _effect_verbs(tool_name: str) -> frozenset[str]:
 
 def _mentions(lowered: str, candidate: str) -> bool:
     """Whether an enum value is mentioned, allowing the human spelling of a snake_case value."""
-    variants = {candidate.lower(), candidate.lower().replace("_", " "), candidate.lower().replace("_", "-")}
-    return any(re.search(rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])", lowered) for variant in variants)
+    lowered_candidate = candidate.lower()
+    variants = {
+        lowered_candidate,
+        lowered_candidate.replace("_", " "),
+        lowered_candidate.replace("_", "-"),
+    }
+    return any(
+        re.search(rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])", lowered)
+        for variant in variants
+    )
 
 
 def _extract_identifier(name: str, utterance: str, lowered: str) -> str | None:

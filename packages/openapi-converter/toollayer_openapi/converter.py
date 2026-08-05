@@ -31,10 +31,11 @@ sibling operations in the document still convert.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Literal, cast
 
 from toollayer_contracts.models import (
     ArgumentBinding,
+    ToolAccessPolicy,
     ToolDefinition,
     ToolOperation,
     ToolPolicy,
@@ -74,10 +75,14 @@ def operation_key(path: str, method: str) -> str:
     return f"{method.lower()} {path}"
 
 
+#: The two parameter locations this converter exposes as model-supplied arguments.
+ParameterLocation = Literal["path", "query"]
+
+
 @dataclass(frozen=True, slots=True)
 class _Parameter:
     name: str
-    location: str
+    location: ParameterLocation
     required: bool
     schema: dict[str, Any]
     description: str | None
@@ -148,6 +153,7 @@ def convert_operation(
         description=_description(operation, normalized_method, path),
         input_schema=input_schema,
         operation=ToolOperation(
+            protocol="http",
             method=normalized_method.upper(),  # type: ignore[arg-type]
             path_template=path,
             bindings=tuple(bindings),
@@ -156,6 +162,7 @@ def convert_operation(
         policy=ToolPolicy(
             effect_class=effect_class,  # type: ignore[arg-type]
             requires_confirmation=requires_confirmation,
+            access=ToolAccessPolicy.public(),
         ),
         provenance=ToolProvenance(
             source_operation_id=operation_id,
@@ -195,7 +202,11 @@ def _collect_parameters(path_item: dict[str, Any], operation: dict[str, Any]) ->
     """
     merged: dict[tuple[str, str], _Parameter] = {}
 
-    for source, raw in (("path item", path_item.get("parameters")), ("operation", operation.get("parameters"))):
+    sources = (
+        ("path item", path_item.get("parameters")),
+        ("operation", operation.get("parameters")),
+    )
+    for source, raw in sources:
         if raw is None:
             continue
         if not isinstance(raw, list):
@@ -258,7 +269,7 @@ def _parse_parameter(entry: object, source: str) -> _Parameter:
 
     return _Parameter(
         name=name,
-        location=location,
+        location=cast(ParameterLocation, location),
         required=required,
         schema=schema,
         description=description.strip() if isinstance(description, str) else None,
@@ -346,7 +357,7 @@ def _convert_request_body(
     properties: dict[str, Any],
     required: list[str],
     bindings: list[ArgumentBinding],
-) -> str | None:
+) -> Literal["application/json"] | None:
     """Convert a JSON request body into one nested ``body`` argument."""
     raw = operation.get("requestBody")
     if raw is None:

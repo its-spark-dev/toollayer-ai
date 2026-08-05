@@ -125,7 +125,8 @@ def prepare_request(
             # `safe=""` so that a value containing `/` or `?` is encoded rather than
             # becoming extra path segments or a query string. This is the control that
             # stops an argument from rewriting the request target.
-            path = path.replace(placeholder, quote(_scalar(value, binding.argument_pointer), safe=""))
+            encoded = quote(_scalar(value, binding.argument_pointer), safe="")
+            path = path.replace(placeholder, encoded)
         elif binding.target == "query":
             query.append((binding.target_name, _scalar(value, binding.argument_pointer)))
         elif binding.target == "header":
@@ -161,7 +162,7 @@ def prepare_request(
         url=url,
         path=path,
         query=tuple(query),
-        headers=tuple([*protocol_headers, *headers]),
+        headers=(*protocol_headers, *headers),
         body=encoded_body,
         content_type=content_type,
     )

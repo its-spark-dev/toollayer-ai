@@ -13,7 +13,7 @@ serialization of the very code it is meant to describe.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -54,7 +54,7 @@ class StatusRequest(BaseModel):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _problem(status_code: int, code: str, message: str) -> HTTPException:

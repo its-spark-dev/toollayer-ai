@@ -118,7 +118,9 @@ def _convert_object(schema: dict[str, Any], *, pointer: str, depth: int) -> dict
     properties: dict[str, Any] = {}
     for name, value in raw_properties.items():
         if not isinstance(name, str) or not name:
-            raise InvalidDocumentError("a property name must be a non-empty string", pointer=pointer)
+            raise InvalidDocumentError(
+                "a property name must be a non-empty string", pointer=pointer
+            )
         escaped = name.replace("~", "~0").replace("/", "~1")
         properties[name] = convert_schema(
             value, pointer=f"{pointer}/properties/{escaped}", depth=depth + 1

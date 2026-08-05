@@ -19,7 +19,7 @@ from a dozen tables would make the digest depend on the schema of the day.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -53,7 +53,7 @@ def utc_now() -> datetime:
     Truncated because these timestamps are serialized into artifacts whose digests must
     match across processes, and sub-second precision differs between database backends.
     """
-    return datetime.now(timezone.utc).replace(microsecond=0)
+    return datetime.now(UTC).replace(microsecond=0)
 
 
 class Base(DeclarativeBase):

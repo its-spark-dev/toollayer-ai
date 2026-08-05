@@ -17,8 +17,6 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from toollayer_contracts.version import CONTRACT_VERSION
-
 __all__ = [
     "ArgumentBinding",
     "AuditTimestamps",
@@ -37,7 +35,10 @@ __all__ = [
     "ToolProvenance",
 ]
 
-SEMVER_PATTERN = r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+SEMVER_PATTERN = (
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
 KEY_PATTERN = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
 TOOL_NAME_PATTERN = r"^[a-z][a-z0-9_]*$"
 JSON_POINTER_PATTERN = r"^(?:/(?:[^~/]|~[01])*)*$"
@@ -86,11 +87,11 @@ class ArgumentBinding(_Strict):
 class ToolOperation(_Strict):
     """The reviewed HTTP operation a tool is bound to."""
 
-    protocol: Literal["http"] = "http"
+    protocol: Literal["http"]
     method: HttpMethod
     path_template: str = Field(min_length=1, max_length=2048, pattern=r"^/(?:[^/?#\s][^?#\s]*)?$")
-    bindings: tuple[ArgumentBinding, ...] = ()
-    request_body_media_type: Literal["application/json"] | None = None
+    bindings: tuple[ArgumentBinding, ...]
+    request_body_media_type: Literal["application/json"] | None
 
     @model_validator(mode="after")
     def _bindings_are_consistent(self) -> ToolOperation:
@@ -114,10 +115,22 @@ class ToolAccessPolicy(_Strict):
     ``public`` carries no role list at all. Keeping a stale list behind ``public`` would
     make the stored policy disagree with the enforced one the moment somebody flipped the
     mode back, so the ambiguity is rejected rather than ignored.
+
+    Note the absence of defaults here and on the enclosing policy models. Every field the
+    JSON Schema marks required is also required by the model, so a document that omits one
+    fails the same way in both representations. A default would let this model accept a
+    document a conforming consumer in another language would reject — and worse, it would
+    silently invent a *permissive* policy for a document whose author forgot to state one.
+    Use :meth:`public` to construct the unrestricted case explicitly.
     """
 
-    access_mode: Literal["public", "restricted"] = "public"
-    allowed_roles: tuple[ResourceKey, ...] = ()
+    access_mode: Literal["public", "restricted"]
+    allowed_roles: tuple[ResourceKey, ...]
+
+    @classmethod
+    def public(cls) -> ToolAccessPolicy:
+        """The unrestricted policy, stated rather than defaulted."""
+        return cls(access_mode="public", allowed_roles=())
 
     @model_validator(mode="after")
     def _mode_and_roles_agree(self) -> ToolAccessPolicy:
@@ -144,20 +157,20 @@ class ToolAccessPolicy(_Strict):
 class ToolPolicy(_Strict):
     """What calling a tool does, and who may call it."""
 
-    effect_class: EffectClass = "read"
-    requires_confirmation: bool = False
-    access: ToolAccessPolicy = ToolAccessPolicy()
+    effect_class: EffectClass
+    requires_confirmation: bool
+    access: ToolAccessPolicy
 
 
 class ToolProvenance(_Strict):
     """Where a tool came from, so a reviewer can trace it back to the source document."""
 
-    source_operation_id: str | None = Field(default=None, max_length=256)
+    source_operation_id: str | None = Field(max_length=256)
     source_path: str = Field(min_length=1, max_length=2048)
     source_method: SourceMethod
-    tags: tuple[str, ...] = ()
-    deprecated: bool = False
-    description_origin: DescriptionOrigin = "source"
+    tags: tuple[str, ...]
+    deprecated: bool
+    description_origin: DescriptionOrigin
 
 
 class ToolDefinition(_Strict):
@@ -168,7 +181,7 @@ class ToolDefinition(_Strict):
     description: str = Field(min_length=1, max_length=1024)
     input_schema: dict[str, Any]
     operation: ToolOperation
-    policy: ToolPolicy = ToolPolicy()
+    policy: ToolPolicy
     provenance: ToolProvenance
 
     @field_validator("input_schema", mode="after")
@@ -200,9 +213,9 @@ class ToolDefinition(_Strict):
 class RuntimeBinding(_Strict):
     """Where the tools in a connector are executed."""
 
-    protocol: Literal["http"] = "http"
+    protocol: Literal["http"]
     base_url: str = Field(max_length=2048)
-    auth_profile_ref: str | None = Field(default=None, max_length=256)
+    auth_profile_ref: str | None = Field(max_length=256)
 
     @field_validator("base_url", mode="after")
     @classmethod
@@ -227,7 +240,7 @@ class RuntimeBinding(_Strict):
 class SourceProvenance(_Strict):
     """The API description this connector was derived from."""
 
-    format: Literal["openapi"] = "openapi"
+    format: Literal["openapi"]
     spec_version: str = Field(min_length=1, max_length=16)
     document_filename: str = Field(min_length=1, max_length=256)
     document_digest: Digest
@@ -237,22 +250,22 @@ class SourceProvenance(_Strict):
 class AuditTimestamps(_Strict):
     created_at: str
     updated_at: str
-    published_at: str | None = None
+    published_at: str | None
 
 
 class ConnectorDefinition(_Strict):
     """One versioned bundle of tools derived from one API description."""
 
-    contract_version: SemanticVersion = CONTRACT_VERSION
+    contract_version: SemanticVersion
     connector_key: ResourceKey
     display_name: str = Field(min_length=1, max_length=128)
     summary: str = Field(min_length=1, max_length=1024)
     version: SemanticVersion
-    lifecycle_state: LifecycleState = "draft"
+    lifecycle_state: LifecycleState
     runtime: RuntimeBinding
     source: SourceProvenance
     tools: tuple[ToolDefinition, ...] = Field(min_length=1)
-    labels: tuple[str, ...] = ()
+    labels: tuple[str, ...]
     audit: AuditTimestamps
 
     @model_validator(mode="after")
@@ -272,13 +285,13 @@ class ConnectorDefinition(_Strict):
 class DeploymentSnapshot(_Strict):
     """The immutable set of connector versions one deployment may serve."""
 
-    contract_version: SemanticVersion = CONTRACT_VERSION
+    contract_version: SemanticVersion
     snapshot_id: str = Field(pattern=r"^snap_[0-9a-f]{32}$")
     deployment_key: ResourceKey
     revision: int = Field(ge=1)
     created_at: str
     snapshot_digest: Digest
-    connectors: tuple[ConnectorDefinition, ...] = ()
+    connectors: tuple[ConnectorDefinition, ...]
 
     @model_validator(mode="after")
     def _one_version_per_connector(self) -> DeploymentSnapshot:

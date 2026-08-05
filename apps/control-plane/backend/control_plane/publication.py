@@ -17,10 +17,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from toollayer_contracts import CONTRACT_VERSION, content_digest, validate_connector_definition
-from toollayer_contracts.errors import ToolLayerError
-from toollayer_contracts.errors import ErrorCode
 from control_plane.review import ReviewState, review_readiness
+from toollayer_contracts import CONTRACT_VERSION, content_digest, validate_connector_definition
+from toollayer_contracts.errors import ErrorCode, ToolLayerError
 
 __all__ = ["BuiltConnector", "NotReadyForPublication", "build_connector_document"]
 

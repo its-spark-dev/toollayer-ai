@@ -19,8 +19,8 @@ from typing import Annotated
 
 from fastapi import Depends, Header
 
-from toollayer_contracts.errors import ErrorCode, ToolLayerError
 from control_plane.config import ControlPlaneSettings, get_settings
+from toollayer_contracts.errors import ErrorCode, ToolLayerError
 
 __all__ = ["require_admin", "require_service", "settings_dependency"]
 

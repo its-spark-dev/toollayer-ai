@@ -13,9 +13,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from toollayer_contracts.adapters import SUPPORTED_PROVIDERS, get_adapter
-from toollayer_contracts.errors import NotFoundError, ValidationError
-from toollayer_contracts.models import ConnectorDefinition
 from control_plane import service
 from control_plane.db import get_session
 from control_plane.dependencies import AdminDep, SettingsDep
@@ -32,6 +29,9 @@ from control_plane.schemas import (
     UpdateDraftRequest,
     VersionSummary,
 )
+from toollayer_contracts.adapters import SUPPORTED_PROVIDERS, get_adapter
+from toollayer_contracts.errors import NotFoundError, ValidationError
+from toollayer_contracts.models import ConnectorDefinition
 
 router = APIRouter(prefix="/admin/v1", tags=["admin"])
 
@@ -119,7 +119,9 @@ def update_draft(
 # --------------------------------------------------------------------------------------
 
 
-@router.post("/connectors/{connector_key}/publish", response_model=VersionSummary, status_code=201)
+@router.post(
+    "/connectors/{connector_key}/publish", response_model=VersionSummary, status_code=201
+)
 def publish(
     connector_key: str,
     payload: PublishRequest,
@@ -143,7 +145,9 @@ def list_versions(connector_key: str, session: SessionDep, _: AdminDep) -> list[
 
 
 @router.get("/connectors/{connector_key}/versions/{version}")
-def get_version(connector_key: str, version: str, session: SessionDep, _: AdminDep) -> dict[str, Any]:
+def get_version(
+    connector_key: str, version: str, session: SessionDep, _: AdminDep
+) -> dict[str, Any]:
     """Return the exact published contract document."""
     row = service.get_version(session, connector_key, version)
     return {
@@ -152,7 +156,9 @@ def get_version(connector_key: str, version: str, session: SessionDep, _: AdminD
     }
 
 
-@router.post("/connectors/{connector_key}/versions/{version}/disable", response_model=VersionSummary)
+@router.post(
+    "/connectors/{connector_key}/versions/{version}/disable", response_model=VersionSummary
+)
 def disable_version(
     connector_key: str,
     version: str,
@@ -257,7 +263,8 @@ def list_snapshots(
     session: SessionDep,
     _: AdminDep,
 ) -> list[dict[str, Any]]:
-    return [_snapshot_summary(snapshot) for snapshot in service.list_snapshots(session, deployment_key)]
+    snapshots = service.list_snapshots(session, deployment_key)
+    return [_snapshot_summary(snapshot) for snapshot in snapshots]
 
 
 @router.get("/deployments/{deployment_key}/snapshots/{revision}")
@@ -357,7 +364,9 @@ def _deployment_summary(deployment: Deployment) -> dict[str, Any]:
 
 def _snapshot_summary(snapshot: DeploymentSnapshot) -> dict[str, Any]:
     document = snapshot.document
-    tool_count = sum(len(connector.get("tools", [])) for connector in document.get("connectors", []))
+    tool_count = sum(
+        len(connector.get("tools", [])) for connector in document.get("connectors", [])
+    )
     return {
         "deployment_key": str(document["deployment_key"]),
         "revision": snapshot.revision,

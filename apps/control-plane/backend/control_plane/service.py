@@ -16,6 +16,17 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from control_plane.models import (
+    Connector,
+    ConnectorDraft,
+    Deployment,
+    DeploymentSnapshot,
+    PublishedVersion,
+    utc_now,
+)
+from control_plane.publication import build_connector_document
+from control_plane.review import ReviewState, ReviewUpdate, apply_update, build_initial_review
+from control_plane.serialization import serialize_analysis
 from toollayer_contracts import (
     CONTRACT_VERSION,
     ConnectorDefinition,
@@ -34,17 +45,6 @@ from toollayer_contracts.errors import (
 )
 from toollayer_contracts.version import compare_precedence
 from toollayer_openapi import SourceLimits, analyze_document, load_document
-from control_plane.models import (
-    Connector,
-    ConnectorDraft,
-    Deployment,
-    DeploymentSnapshot,
-    PublishedVersion,
-    utc_now,
-)
-from control_plane.publication import build_connector_document
-from control_plane.review import ReviewState, ReviewUpdate, apply_update, build_initial_review
-from control_plane.serialization import serialize_analysis
 
 __all__ = [
     "SnapshotSelection",
@@ -77,7 +77,7 @@ def register_connector(
     summary: str | None,
     source_bytes: bytes,
     source_filename: str,
-    proposed_version: str = "0.1.0",
+    proposed_version: str | None = None,
     base_url_override: str | None = None,
     auth_profile_ref: str | None = None,
     max_source_bytes: int = 2 * 1024 * 1024,
@@ -88,9 +88,12 @@ def register_connector(
     a corrected specification is the normal way to fix an analysis problem, and forcing the
     reviewer to delete the old draft first would add a step that only ever has one answer.
     Published versions are untouched by this — they are immutable and live in separate rows.
-    """
-    parse_version(proposed_version)
 
+    When the caller does not name a version, the next one is derived from what is already
+    published rather than fixed at ``0.1.0``. Fixing it would make the second registration of
+    a connector fail against its own published history, which is exactly the moment a
+    reviewer is most likely to be re-uploading a corrected specification.
+    """
     loaded = load_document(
         source_bytes,
         filename=source_filename,
@@ -116,7 +119,11 @@ def register_connector(
             connector.summary = summary
         connector.updated_at = utc_now()
 
-    _reject_version_regression(session, connector, proposed_version)
+    if proposed_version is None:
+        proposed_version = _next_version(session, connector)
+    else:
+        parse_version(proposed_version)
+        _reject_version_regression(session, connector, proposed_version)
 
     serialized = serialize_analysis(analysis)
     review = build_initial_review(serialized)
@@ -337,6 +344,31 @@ def disable_version(
     return row
 
 
+def _next_version(session: Session, connector: Connector) -> str:
+    """Suggest the next version: the first one, or a minor bump on the highest published.
+
+    A *suggestion* only — the reviewer can change it before publishing. Bumping the minor
+    is the right default because a re-analysis of a changed specification adds or alters
+    tools, which is an additive change to the connector's surface rather than a fix.
+    """
+    published = _published_versions(session, connector)
+    if not published:
+        return "0.1.0"
+    highest = max(published, key=lambda value: parse_version(value))
+    parsed = parse_version(highest)
+    return f"{parsed.major}.{parsed.minor + 1}.0"
+
+
+def _published_versions(session: Session, connector: Connector) -> list[str]:
+    if connector.id is None:
+        return []
+    return list(
+        session.scalars(
+            select(PublishedVersion.version).where(PublishedVersion.connector_id == connector.id)
+        ).all()
+    )
+
+
 def _reject_version_regression(session: Session, connector: Connector, version: str) -> None:
     """Refuse a version that does not exceed everything already published.
 
@@ -344,13 +376,8 @@ def _reject_version_regression(session: Session, connector: Connector, version: 
     version number that means something different from what a reader expects. Semantic
     Versioning only helps if the sequence is actually monotonic.
     """
-    if connector.id is None:
-        return
     candidate = parse_version(version)
-    published = session.scalars(
-        select(PublishedVersion.version).where(PublishedVersion.connector_id == connector.id)
-    ).all()
-    for existing in published:
+    for existing in _published_versions(session, connector):
         if compare_precedence(candidate, parse_version(existing)) <= 0:
             raise ValidationError(
                 f"version must be greater than the published version {existing}",

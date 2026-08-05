@@ -85,6 +85,7 @@ class OperationReview:
         )
 
 
+
 @dataclass(frozen=True, slots=True)
 class ReviewState:
     """Every decision recorded for one draft."""
@@ -171,7 +172,9 @@ def apply_update(state: ReviewState, update: ReviewUpdate) -> ReviewState:
     changes: dict[str, Any] = {}
     if update.selection is not None:
         if update.selection not in ("included", "excluded"):
-            raise ValidationError("selection must be 'included' or 'excluded'", pointer="/selection")
+            raise ValidationError(
+                "selection must be 'included' or 'excluded'", pointer="/selection"
+            )
         changes["selection"] = update.selection
 
     if update.description is not None:
@@ -207,7 +210,7 @@ def apply_update(state: ReviewState, update: ReviewUpdate) -> ReviewState:
         # the published artifact would reject.
         try:
             policy = ToolAccessPolicy(access_mode=access_mode, allowed_roles=allowed_roles)
-        except Exception as error:  # noqa: BLE001 - pydantic raises its own error type
+        except Exception as error:
             raise ValidationError(str(error).split("\n")[0], pointer="/access") from None
         changes["access_mode"] = policy.access_mode
         changes["allowed_roles"] = policy.allowed_roles

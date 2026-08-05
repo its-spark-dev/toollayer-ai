@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from typing import Final
 
 __all__ = [
+    "DENY_REASONS",
     "AuthorizationDecision",
     "CallerIdentity",
-    "DENY_REASONS",
     "ToolAudiencePolicy",
     "authorize_tool",
     "parse_audience_policy",

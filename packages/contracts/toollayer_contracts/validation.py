@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Sequence
-from functools import lru_cache
+from functools import cache, lru_cache
 from importlib import resources
 from typing import Any
 
@@ -59,7 +59,7 @@ def schema_names() -> tuple[str, ...]:
     return _SCHEMA_NAMES
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_schema(name: str) -> dict[str, Any]:
     """Load one packaged contract schema by file name."""
     if name not in _SCHEMA_NAMES:
@@ -85,7 +85,7 @@ def _registry() -> Registry[Any]:
     return registry
 
 
-@lru_cache(maxsize=None)
+@cache
 def _validator(name: str) -> Draft202012Validator:
     schema = load_schema(name)
     Draft202012Validator.check_schema(schema)
@@ -195,7 +195,7 @@ def validate_tool_input_schema(document: object, *, pointer: str = "") -> None:
         raise ContractViolationError("input_schema must be an object", pointer=pointer)
     try:
         Draft202012Validator.check_schema(document)
-    except Exception:  # noqa: BLE001 - jsonschema raises several unrelated types here
+    except Exception:
         raise ContractViolationError(
             "input_schema is not a valid Draft 2020-12 schema", pointer=pointer
         ) from None
