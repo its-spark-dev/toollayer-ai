@@ -1,5 +1,15 @@
 SHELL := /bin/bash
-PYTHON ?= python3
+
+# The first interpreter on PATH is frequently an older system Python. Searching for a
+# supported one gives a clear message at setup time instead of an opaque pip resolution error.
+# Override with `make setup PYTHON=/path/to/python3.12`.
+PYTHON ?= $(shell for candidate in python3.13 python3.12 python3.11 python3; do \
+	if command -v $$candidate >/dev/null 2>&1 && \
+	   $$candidate -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then \
+		echo $$candidate; break; \
+	fi; \
+done)
+
 VENV := .venv
 BIN := $(VENV)/bin
 
@@ -18,7 +28,14 @@ help: ## Show the available targets
 
 .PHONY: setup
 setup: ## Create the virtualenv and install every dependency
-	$(PYTHON) -m venv $(VENV) 2>/dev/null || true
+	@if [ -z "$(PYTHON)" ]; then \
+		echo "No Python 3.11 or newer was found on PATH."; \
+		echo "Install one, or point at it explicitly:"; \
+		echo "    make setup PYTHON=/path/to/python3.12"; \
+		exit 1; \
+	fi
+	@echo "Using $$($(PYTHON) --version) from $$(command -v $(PYTHON))"
+	$(PYTHON) -m venv $(VENV)
 	$(BIN)/python -m pip install --quiet --upgrade pip
 	$(BIN)/python -m pip install --quiet -e ".[dev]"
 	@echo "Environment ready. Run 'make demo' or 'make test'."
