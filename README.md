@@ -7,7 +7,7 @@ orchestration.
 
 [![CI](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-180%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-185%20passing-brightgreen)](tests/)
 [![Demo runs offline](https://img.shields.io/badge/demo-no%20API%20key-informational)](#quick-start)
 
 ---
@@ -273,10 +273,12 @@ tests/                      unit · contract · integration · security · e2e
 ## Testing
 
 ```bash
-make test           # 180 tests
+make test           # 180 Python tests
 make test-security  # only the tests that prove a control refuses something
 make check          # lint + typecheck + test, exactly what CI runs
 ```
+
+The console adds 5 more (`cd apps/control-plane/frontend && npm test`), for 185 in total.
 
 | Suite | Protects |
 |---|---|
