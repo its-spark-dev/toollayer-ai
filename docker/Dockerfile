@@ -6,7 +6,7 @@
 # tag makes a rebuild silently different from the build that was tested. docs/deployment.md
 # records how the pin is updated, so pinning does not turn into never patching.
 
-FROM python:3.12.8-slim AS base
+FROM python:3.14.0-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
