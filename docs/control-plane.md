@@ -101,7 +101,17 @@ prefix plus a digest suffix, so distinct inputs stay distinct.
 | Two operations normalizing to one tool name | Auto-renaming would invent a name that appears nowhere in the source |
 | Unknown schema keywords | A keyword that silently means nothing at runtime is a validation hole |
 
-The last row is the general principle: the keyword filter is an **allowlist**, because the
+Ingestion refuses a further set before conversion is reached, at the YAML and JSON layer:
+
+| Refused | Why |
+|---|---|
+| Any YAML tag outside the standard scalar, sequence and mapping set | The loader constructs no Python object of any kind; `!!python/object`, `!!python/name` and unknown local tags all fail |
+| Duplicate mapping or object keys | Two parsers disagreeing about which key wins is how a reviewer and a runtime end up seeing different documents |
+| YAML merge keys (`<<: *anchor`) | The reviewed document and the file on disk would have different key sets |
+| Non-scalar mapping keys | Valid YAML, unrepresentable in JSON, and not something an OpenAPI document needs |
+| Documents nested past the depth limit | Enforced for the parser itself, not only for the parsed result |
+
+The keyword allowlist is the general principle: the keyword filter is an **allowlist**, because the
 input schema is not just data — the runtime executes it against model output.
 
 ## 5. Draft review
