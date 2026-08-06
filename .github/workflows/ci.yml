@@ -71,7 +71,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      # Third-party actions are pinned to a commit SHA rather than a moving tag: a tag can be
+      # repointed at new code by whoever owns the repository, and this job runs in our CI.
+      # First-party actions/* keep major tags — the same argument applies less forcefully, and
+      # Dependabot proposes updates for both.
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           version: "0.5.29"
 
@@ -412,7 +416,7 @@ jobs:
         # gitleaks over the whole history, not just the diff. A credential removed in a later
         # commit is still published, and the working-tree-only check this replaced could not
         # see that.
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
