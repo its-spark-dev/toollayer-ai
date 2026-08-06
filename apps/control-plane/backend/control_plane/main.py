@@ -115,9 +115,17 @@ def create_app(*, create_tables: bool = True) -> FastAPI:
         return JSONResponse(status_code=500, content=envelope.to_dict())
 
     @app.get("/healthz", tags=["operations"])
-    async def healthz() -> dict[str, str]:
+    async def healthz() -> dict[str, object]:
         """Liveness: the process is up. Deliberately does not touch the database."""
-        return {"status": "ok", "contract_version": CONTRACT_VERSION}
+        return {
+            "status": "ok",
+            "contract_version": CONTRACT_VERSION,
+            # Surfaced so an unsigned Control Plane says so about itself. A deployment that
+            # publishes unauthenticated artifacts should be visible from the outside, not
+            # something a consumer discovers by inspecting a snapshot.
+            "snapshot_signing": "enabled" if settings.signs_snapshots else "disabled",
+            "snapshot_signing_key_id": settings.snapshot_signing_key_id or None,
+        }
 
     @app.get("/readyz", tags=["operations"])
     async def readyz() -> JSONResponse:

@@ -33,6 +33,7 @@ from toollayer_contracts import (
     canonical_json,
     content_digest,
     parse_version,
+    sign_document,
     validate_deployment_snapshot,
 )
 from toollayer_contracts.errors import (
@@ -43,6 +44,7 @@ from toollayer_contracts.errors import (
     RevisionConflictError,
     ValidationError,
 )
+from toollayer_contracts.signing import SigningKey
 from toollayer_contracts.version import compare_precedence
 from toollayer_openapi import SourceLimits, analyze_document, load_document
 
@@ -429,13 +431,24 @@ def create_snapshot(
     deployment_key: str,
     selections: tuple[SnapshotSelection, ...],
     created_by: str,
+    signing_key: SigningKey | None = None,
 ) -> DeploymentSnapshot:
     """Build the next immutable snapshot for a deployment.
 
     Each selection is resolved to an exact published version and embedded whole. The runtime
-    therefore needs one request to know everything it may serve, and it can verify what it
-    received without trusting the transport — the digest covers the entire document
-    including every embedded connector.
+    therefore needs one request to know everything it may serve.
+
+    Two independent claims are attached, and they are not interchangeable. The **digest**
+    identifies the content: it makes the snapshot addressable, gives the internal API a
+    meaningful ETag, and catches corruption in transit or storage. The **signature**
+    authenticates the producer: it is computed with a private key this service holds, so a
+    consumer that trusts the matching public key can tell a snapshot this Control Plane built
+    from one an attacker substituted — which the digest alone cannot do, because recomputing
+    SHA-256 requires no secret.
+
+    ``signing_key`` is ``None`` only when the deployment was explicitly configured not to
+    sign. The runtime refuses such a snapshot unless it, too, was explicitly configured to
+    accept unsigned artifacts.
     """
     deployment = get_deployment(session, deployment_key)
 
@@ -486,6 +499,13 @@ def create_snapshot(
     digest = content_digest(payload)
     snapshot_id = "snap_" + hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:32]
     document = {**payload, "snapshot_id": snapshot_id, "snapshot_digest": digest}
+
+    # Signed last, over the document that already carries its id and digest, so the signature
+    # covers them too. A signature over the payload alone could be lifted onto a document
+    # whose digest had been swapped.
+    if signing_key is not None:
+        document["signature"] = sign_document(document, signing_key)
+
     validate_deployment_snapshot(document)
 
     for previous in deployment.snapshots:

@@ -18,6 +18,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 __all__ = [
+    "SNAPSHOT_DIGEST_EXCLUDED",
     "CanonicalJsonError",
     "canonical_bytes",
     "canonical_json",
@@ -27,6 +28,12 @@ __all__ = [
 ]
 
 _DIGEST_PREFIX = "sha256:"
+
+#: Top-level snapshot fields the digest does not cover, named once so a producer and a
+#: consumer cannot drift apart. ``snapshot_id`` and ``snapshot_digest`` because the digest is
+#: embedded in the document it describes; ``signature`` because it is computed afterwards,
+#: over a superset that includes the digest.
+SNAPSHOT_DIGEST_EXCLUDED: tuple[str, ...] = ("snapshot_id", "snapshot_digest", "signature")
 
 
 class CanonicalJsonError(ValueError):
@@ -102,6 +109,13 @@ def verify_digest(document: object, expected: str, *, exclude: Iterable[str] = (
     Comparison is a plain equality check on lowercase hex: these digests are integrity
     markers for non-secret artifacts, not authentication tags, so constant-time comparison
     would imply a guarantee this function does not provide.
+
+    What a match proves, and what it does not: it proves the bytes are the ones the digest
+    was taken over, so accidental corruption and an edit that forgot to update the digest are
+    both caught. It proves nothing about *who* produced the document — recomputing SHA-256
+    needs no secret, so an attacker able to rewrite the payload can rewrite the digest with
+    it. Producer authenticity is a separate control; see
+    :mod:`toollayer_contracts.signing`.
     """
     if not isinstance(expected, str) or not expected.startswith(_DIGEST_PREFIX):
         return False

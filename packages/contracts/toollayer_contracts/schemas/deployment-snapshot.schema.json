@@ -39,7 +39,31 @@
     "snapshot_digest": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
-      "description": "SHA-256 over the canonical JSON of this document with snapshot_id and snapshot_digest removed. A consumer recomputes it before trusting the payload."
+      "description": "SHA-256 over the canonical JSON of this document with snapshot_id, snapshot_digest and signature removed. It identifies the content and detects accidental corruption or an edit made without updating the digest. It does NOT authenticate the producer: computing SHA-256 requires no secret, so an attacker who can rewrite the payload can also recompute this value. Producer authenticity comes from the signature field."
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "value"],
+      "description": "Detached producer signature over the canonical JSON of this document with the signature field removed — which therefore covers snapshot_id and snapshot_digest as well as every connector. A consumer verifies it against a public key it was configured with out of band. Absent only in an explicitly unsigned local demonstration.",
+      "properties": {
+        "algorithm": {
+          "const": "ed25519",
+          "description": "The only algorithm this contract version defines. An unrecognized value is refused rather than negotiated."
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$",
+          "description": "Identifies which trusted public key verifies this signature, so keys can be rotated without a simultaneous redeployment."
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{86}$",
+          "description": "The 64-byte Ed25519 signature, unpadded base64url."
+        }
+      }
     },
     "connectors": {
       "type": "array",

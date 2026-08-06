@@ -25,6 +25,7 @@ __all__ = [
     "ErrorBody",
     "ErrorEnvelopeModel",
     "RuntimeBinding",
+    "SnapshotSignature",
     "SourceProvenance",
     "ToolAccessPolicy",
     "ToolDefinition",
@@ -282,6 +283,20 @@ class ConnectorDefinition(_Strict):
         return None
 
 
+class SnapshotSignature(_Strict):
+    """A detached producer signature over a snapshot document.
+
+    Separate from ``snapshot_digest`` because the two make different claims. The digest says
+    *these are the same bytes*; the signature says *a holder of this key produced them*. Only
+    the second survives an attacker who can rewrite the payload, because only the second
+    requires a secret to compute.
+    """
+
+    algorithm: Literal["ed25519"]
+    key_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$", min_length=2, max_length=64)
+    value: str = Field(pattern=r"^[A-Za-z0-9_-]{86}$")
+
+
 class DeploymentSnapshot(_Strict):
     """The immutable set of connector versions one deployment may serve."""
 
@@ -292,6 +307,9 @@ class DeploymentSnapshot(_Strict):
     created_at: str
     snapshot_digest: Digest
     connectors: tuple[ConnectorDefinition, ...]
+    #: Absent only when the producer was explicitly configured not to sign, which the
+    #: runtime reports about itself rather than accepting silently.
+    signature: SnapshotSignature | None = None
 
     @model_validator(mode="after")
     def _one_version_per_connector(self) -> DeploymentSnapshot:

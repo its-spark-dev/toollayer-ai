@@ -23,6 +23,10 @@ dependencies = [
     "alembic>=1.13",
     "httpx>=0.27",
     "python-multipart>=0.0.9",
+    # Ed25519 for deployment-snapshot producer authentication and caller-token verification.
+    # The only cryptographic dependency, and it does the one job a hash cannot: prove who
+    # produced an artifact, not merely that its bytes are self-consistent.
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

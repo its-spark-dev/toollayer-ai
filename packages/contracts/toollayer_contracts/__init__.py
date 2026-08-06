@@ -15,6 +15,7 @@ no interoperability is claimed with anything outside this repository.
 from __future__ import annotations
 
 from toollayer_contracts.canonical_json import (
+    SNAPSHOT_DIGEST_EXCLUDED,
     canonical_bytes,
     canonical_json,
     content_digest,
@@ -35,6 +36,7 @@ from toollayer_contracts.models import (
     ConnectorDefinition,
     DeploymentSnapshot,
     RuntimeBinding,
+    SnapshotSignature,
     SourceProvenance,
     ToolAccessPolicy,
     ToolDefinition,
@@ -43,6 +45,18 @@ from toollayer_contracts.models import (
     ToolOperation,
     ToolPolicy,
     ToolProvenance,
+)
+from toollayer_contracts.signing import (
+    SIGNATURE_ALGORITHM,
+    InvalidKeyMaterial,
+    SignatureVerificationError,
+    SigningKey,
+    TrustedKeyRing,
+    VerifyingKey,
+    generate_signing_key,
+    sign_document,
+    signing_input,
+    verify_document,
 )
 from toollayer_contracts.validation import (
     load_schema,
@@ -65,6 +79,8 @@ from toollayer_contracts.version import (
 
 __all__ = [
     "CONTRACT_VERSION",
+    "SIGNATURE_ALGORITHM",
+    "SNAPSHOT_DIGEST_EXCLUDED",
     "ArgumentBinding",
     "AuditTimestamps",
     "ConnectorDefinition",
@@ -74,7 +90,11 @@ __all__ = [
     "ErrorDetail",
     "ErrorEnvelope",
     "IncompatibleContractVersionError",
+    "InvalidKeyMaterial",
     "RuntimeBinding",
+    "SignatureVerificationError",
+    "SigningKey",
+    "SnapshotSignature",
     "SourceProvenance",
     "ToolAccessPolicy",
     "ToolDefinition",
@@ -84,17 +104,22 @@ __all__ = [
     "ToolOperation",
     "ToolPolicy",
     "ToolProvenance",
+    "TrustedKeyRing",
+    "VerifyingKey",
     "canonical_bytes",
     "canonical_json",
     "compare_precedence",
     "content_digest",
     "digest_of",
     "error_response",
+    "generate_signing_key",
     "is_supported",
     "load_schema",
     "parse_version",
     "require_supported",
     "schema_names",
+    "sign_document",
+    "signing_input",
     "status_for",
     "validate_connector_definition",
     "validate_deployment_snapshot",
@@ -102,4 +127,5 @@ __all__ = [
     "validate_tool_definition",
     "validate_tool_input_schema",
     "verify_digest",
+    "verify_document",
 ]

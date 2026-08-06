@@ -203,6 +203,15 @@ def run(control_plane_url: str, runtime_url: str, demo_api_url: str, admin_token
         )
         detail(f"snapshot id {snapshot['snapshot_id']}")
         detail(f"snapshot digest {snapshot['snapshot_digest'][:23]}…")
+        # The digest identifies the content; the signature says who produced it. Both are
+        # printed because they are different claims and the demo should not blur them.
+        if snapshot.get("signed"):
+            good(
+                f"signed by {snapshot['signing_key_id']} "
+                f"({snapshot['signature_algorithm']}) — producer authenticated"
+            )
+        else:
+            detail("unsigned: this control plane has no signing key configured")
 
         step(5, "Load the snapshot in the Runtime")
         wait_for(agent, "/healthz", label="the runtime")
@@ -211,10 +220,25 @@ def run(control_plane_url: str, runtime_url: str, demo_api_url: str, admin_token
             f"runtime is serving snapshot revision {loaded['snapshot_revision']} "
             f"with {loaded['tool_count']} tools"
         )
+        if loaded.get("snapshot_signed"):
+            good(f"signature verified against trusted key {loaded['snapshot_signing_key_id']}")
+        else:
+            detail("accepted unsigned: signature verification is disabled on this runtime")
+        health = agent.expect("GET", "/healthz", 200)
+        detail(
+            f"caller identity: {health['caller_authentication']} "
+            f"(verified={health['caller_identity_is_verified']})"
+        )
 
         step(6, "Tool discovery is role-aware")
         agent_tools = agent.expect("GET", "/v1/tools", 200)["tools"]
         lead_tools = lead.expect("GET", "/v1/tools", 200)["tools"]
+        agent_names = {tool["tool_name"] for tool in agent_tools}
+        lead_names = {tool["tool_name"] for tool in lead_tools}
+        # Asserted, not merely printed. A regression that collapsed the two roles into one
+        # would otherwise print an empty difference and exit zero.
+        if not lead_names > agent_names:
+            raise DemoError("role-aware discovery did not restrict what the agent can see")
         good(f"support-agent sees {len(agent_tools)} tools")
         good(f"support-lead  sees {len(lead_tools)} tools")
         detail(
@@ -252,6 +276,9 @@ def run(control_plane_url: str, runtime_url: str, demo_api_url: str, admin_token
         good(f"arguments      {json.dumps(write['arguments'], sort_keys=True)}")
 
         step(9, "Rejections")
+        # Each check names the error code it must produce. Asserting only "&gt;= 400" would let a
+        # 404 stand in for a 403 — the request would still fail, but for the wrong reason, and
+        # the demo would report a control working that had in fact stopped working.
         checks = [
             (
                 agent,
@@ -261,6 +288,7 @@ def run(control_plane_url: str, runtime_url: str, demo_api_url: str, admin_token
                     "arguments": {"ticket_id": "TKT-1001", "body": {"status": "closed"}},
                     "confirmed": True,
                 },
+                "role_not_permitted",
                 "an unauthorized role calls the restricted write tool",
             ),
             (
@@ -268,6 +296,7 @@ def run(control_plane_url: str, runtime_url: str, demo_api_url: str, admin_token
                 "POST",
                 "/v1/tools/delete_every_ticket/execute",
                 {"arguments": {}},
+                "unknown_tool",
                 "a fabricated tool name that is not in the snapshot",
             ),
             (
@@ -275,6 +304,7 @@ def run(control_plane_url: str, runtime_url: str, demo_api_url: str, admin_token
                 "POST",
                 "/v1/tools/list_support_tickets/execute",
                 {"arguments": {"status": "open", "callback_url": "https://attacker.test/collect"}},
+                "argument_validation_failed",
                 "an argument the published schema does not declare",
             ),
             (
@@ -282,17 +312,26 @@ def run(control_plane_url: str, runtime_url: str, demo_api_url: str, admin_token
                 "POST",
                 "/v1/chat",
                 {"utterance": "mark ticket TKT-1005 as closed"},
+                "confirmation_required",
                 "a state change without explicit confirmation",
             ),
         ]
         failures = 0
-        for client, method, path, payload, description in checks:
+        for client, method, path, payload, expected_code, description in checks:
             status, body = client.request(method, path, json=payload)
             if status < 400:
                 print(f"    {RED}!{RESET} NOT REJECTED: {description}")
                 failures += 1
                 continue
-            rejected(body["error"]["code"], description)
+            code = (body or {}).get("error", {}).get("code")
+            if code != expected_code:
+                print(
+                    f"    {RED}!{RESET} WRONG REASON: {description} "
+                    f"(expected {expected_code}, got {code})"
+                )
+                failures += 1
+                continue
+            rejected(code, description)
 
         print()
         if failures:

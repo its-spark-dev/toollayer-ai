@@ -250,9 +250,18 @@ class TestDestinationControls:
             )
         assert caught.value.code == ErrorCode.REDIRECT_NOT_ALLOWED
 
-    def test_an_oversized_response_is_refused_rather_than_buffered(
+    def test_an_oversized_response_is_refused_by_the_executor(
         self, loaded_snapshot, stub_resolver
     ) -> None:
+        """The executor's own backstop, independent of what any transport does.
+
+        Renamed from "…rather than buffered": this test substitutes the transport with one
+        that hands over an already-materialized body, so it can only show that an oversized
+        result is refused. Whether the bytes were *streamed* rather than buffered is a
+        property of the real transport, and it is proved against a real socket in
+        ``tests/integration/test_streaming_response_limits.py``.
+        """
+
         class FloodingTransport:
             def send(self, request: Any, *, limits: Any) -> tuple[int, dict[str, str], bytes]:
                 return (

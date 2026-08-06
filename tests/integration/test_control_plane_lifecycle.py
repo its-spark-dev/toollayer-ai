@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from tests.conftest import ADMIN_HEADERS, DEMO_ORIGIN, SERVICE_HEADERS
 
-from toollayer_contracts import verify_digest
+from toollayer_contracts import SNAPSHOT_DIGEST_EXCLUDED, verify_digest
 
 pytestmark = pytest.mark.integration
 
@@ -309,7 +309,7 @@ class TestDeploymentsAndSnapshots:
         assert verify_digest(
             published_snapshot,
             published_snapshot["snapshot_digest"],
-            exclude=("snapshot_id", "snapshot_digest"),
+            exclude=SNAPSHOT_DIGEST_EXCLUDED,
         )
 
     def test_snapshot_revisions_increase_and_only_the_newest_is_active(

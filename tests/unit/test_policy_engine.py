@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from tests.factories import closed_schema, make_operation, make_provenance, make_tool
 
-from toollayer_contracts.errors import PolicyDenied
+from toollayer_contracts.errors import ErrorCode, PolicyDenied
 from toollayer_contracts.models import ArgumentBinding, ToolDefinition
 from toollayer_policy import (
     ArgumentValidationError,
@@ -190,6 +190,186 @@ class TestDestinationPolicy:
     def test_normalize_origin_makes_the_port_explicit(self) -> None:
         assert normalize_origin("https://api.example.org") == "https://api.example.org:443"
         assert normalize_origin("http://api.example.org") == "http://api.example.org:80"
+
+
+class TestMalformedDestinations:
+    """A URL the parser cannot understand must be refused, not crash the request.
+
+    ``urlsplit(...).port`` raises ``ValueError`` lazily, at the point of *access* rather than
+    at parse time. Reading ``.port`` in passing therefore turns a malformed authority into an
+    exception from a line that does not look like parsing — and, one layer up, into an
+    unhandled 500 instead of a policy refusal. Every case below used to reach that path.
+    """
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://api.example.org:notaport/v1",
+            "https://api.example.org:99999/v1",
+            "https://api.example.org:-1/v1",
+            "https://api.example.org:65536/v1",
+            "https://api.example.org: /v1",
+            "https://[not-an-ipv6/v1",
+            "https://[::1/v1",
+            "https:///v1",
+            "https://:8443/v1",
+            "http://",
+            "not-a-url-at-all",
+            "ftp://api.example.org/v1",
+            "file:///etc/passwd",
+            "//api.example.org/v1",
+        ],
+        ids=[
+            "non-numeric-port",
+            "port-out-of-range",
+            "negative-port",
+            "port-just-past-the-maximum",
+            "whitespace-port",
+            "unterminated-ipv6",
+            "unterminated-ipv6-loopback",
+            "empty-authority",
+            "port-with-no-host",
+            "scheme-only",
+            "no-scheme",
+            "unsupported-scheme",
+            "file-scheme",
+            "protocol-relative",
+        ],
+    )
+    def test_a_malformed_destination_is_a_structured_refusal(self, url: str) -> None:
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        with pytest.raises(PolicyDenied) as caught:
+            policy.check(url, resolver=StubResolver({"api.example.org": ("100.0.0.1",)}))
+        assert caught.value.code == ErrorCode.DESTINATION_NOT_ALLOWED
+
+    def test_a_malformed_allowlist_entry_is_rejected_at_configuration_time(self) -> None:
+        """Failing at startup beats failing on the first request that happens to use it."""
+        for entry in ("https://api.example.org:notaport", "https://[::1", "ftp://x.example.org"):
+            with pytest.raises(ValueError, match="invalid allowlist entry"):
+                DestinationPolicy.from_origins([entry])
+
+    def test_a_trailing_dot_does_not_create_a_second_spelling_of_one_origin(self) -> None:
+        """``api.example.org.`` and ``api.example.org`` reach the same server.
+
+        Treating them as different strings would mean an exact-origin allowlist could be
+        satisfied — or evaded — by a character DNS ignores.
+        """
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        resolved = policy.check(
+            "https://api.example.org./v1",
+            resolver=StubResolver({"api.example.org": ("100.0.0.1",)}),
+        )
+        assert resolved.origin == "https://api.example.org:443"
+
+    def test_an_uppercase_host_matches_a_lowercase_allowlist_entry(self) -> None:
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        resolved = policy.check(
+            "https://API.Example.ORG/v1", resolver=StubResolver({"api.example.org": ("100.0.0.1",)})
+        )
+        assert resolved.host == "api.example.org"
+
+    def test_the_default_port_is_the_same_origin_as_no_port(self) -> None:
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        for url in ("https://api.example.org/v1", "https://api.example.org:443/v1"):
+            assert (
+                policy.check(url, resolver=StubResolver({"api.example.org": ("100.0.0.1",)})).port
+                == 443
+            )
+
+    def test_a_non_default_port_is_a_different_origin(self) -> None:
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        with pytest.raises(PolicyDenied, match="allowlist"):
+            policy.check(
+                "https://api.example.org:8443/v1",
+                resolver=StubResolver({"api.example.org": ("100.0.0.1",)}),
+            )
+
+    def test_a_literal_ipv4_destination_is_checked_as_an_address(self) -> None:
+        """No DNS lookup, and the address family check still applies."""
+        policy = DestinationPolicy.from_origins(["https://100.0.0.1"])
+        assert policy.check("https://100.0.0.1/v1").addresses == ("100.0.0.1",)
+
+        private = DestinationPolicy.from_origins(["https://10.0.0.5"])
+        with pytest.raises(PolicyDenied, match="not globally routable"):
+            private.check("https://10.0.0.5/v1")
+
+    def test_a_literal_ipv6_destination_is_checked_as_an_address(self) -> None:
+        policy = DestinationPolicy.from_origins(["https://[2606:4700::1111]"])
+        assert policy.check("https://[2606:4700::1111]/v1").addresses == ("2606:4700::1111",)
+
+        loopback = DestinationPolicy.from_origins(["https://[::1]"])
+        with pytest.raises(PolicyDenied, match="loopback"):
+            loopback.check("https://[::1]/v1")
+
+    def test_an_ipv4_mapped_ipv6_loopback_is_still_loopback(self) -> None:
+        """``::ffff:127.0.0.1`` reaches 127.0.0.1, and must be judged as 127.0.0.1.
+
+        The IPv6 object does not report itself as loopback, so a check that trusted the
+        representation rather than the destination would let this through.
+        """
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        with pytest.raises(PolicyDenied, match="loopback"):
+            policy.check(
+                "https://api.example.org/v1",
+                resolver=StubResolver({"api.example.org": ("::ffff:127.0.0.1",)}),
+            )
+
+    def test_an_ipv4_mapped_private_address_is_still_private(self) -> None:
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        with pytest.raises(PolicyDenied, match="not globally routable"):
+            policy.check(
+                "https://api.example.org/v1",
+                resolver=StubResolver({"api.example.org": ("::ffff:10.0.0.5",)}),
+            )
+
+    def test_an_ipv4_mapped_link_local_address_is_still_link_local(self) -> None:
+        """The metadata service, wearing a different hat."""
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        with pytest.raises(PolicyDenied, match="link-local"):
+            policy.check(
+                "https://api.example.org/v1",
+                resolver=StubResolver({"api.example.org": ("::ffff:169.254.169.254",)}),
+            )
+
+    def test_userinfo_is_refused_even_when_the_origin_would_match(self) -> None:
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        with pytest.raises(PolicyDenied, match="credentials"):
+            policy.check(
+                "https://user:secret@api.example.org/v1",
+                resolver=StubResolver({"api.example.org": ("100.0.0.1",)}),
+            )
+
+    def test_a_percent_encoded_host_does_not_smuggle_a_different_authority(self) -> None:
+        """``%2f`` and friends must not turn one host into another after decoding."""
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        with pytest.raises(PolicyDenied):
+            policy.check(
+                "https://api.example.org%2eattacker.test/v1",
+                resolver=StubResolver({"api.example.org": ("100.0.0.1",)}),
+            )
+
+    def test_a_malformed_url_never_triggers_a_resolution(self) -> None:
+        """Structural checks run first, so a bad URL cannot be used to probe DNS.
+
+        A lookup is itself an outbound side effect. Refusing before resolving means a caller
+        cannot use rejected destinations as an oracle.
+        """
+
+        class CountingResolver(StubResolver):
+            def __init__(self) -> None:
+                super().__init__({"api.example.org": ("100.0.0.1",)})
+                self.calls = 0
+
+            def resolve(self, host: str, port: int) -> tuple[str, ...]:
+                self.calls += 1
+                return super().resolve(host, port)
+
+        resolver = CountingResolver()
+        policy = DestinationPolicy.from_origins(["https://api.example.org"])
+        for url in ("https://api.example.org:notaport/v1", "ftp://api.example.org/v1"):
+            with pytest.raises(PolicyDenied):
+                policy.check(url, resolver=resolver)
+        assert resolver.calls == 0
 
 
 class TestArgumentValidation:

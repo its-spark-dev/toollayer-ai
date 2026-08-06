@@ -21,6 +21,7 @@ from tests.conftest import ADMIN_HEADERS, SERVICE_HEADERS
 
 from toollayer_contracts import (
     CONTRACT_VERSION,
+    SNAPSHOT_DIGEST_EXCLUDED,
     ConnectorDefinition,
     DeploymentSnapshot,
     ToolDefinition,
@@ -124,11 +125,11 @@ class TestModelSchemaAgreement:
 
 class TestCrossServiceCompatibility:
     def test_the_runtime_accepts_what_the_control_plane_published(
-        self, published_snapshot: dict[str, Any]
+        self, published_snapshot: dict[str, Any], snapshot_verification: Any
     ) -> None:
         from runtime_service.snapshot import load_snapshot_document
 
-        loaded = load_snapshot_document(published_snapshot)
+        loaded = load_snapshot_document(published_snapshot, verification=snapshot_verification)
         assert loaded.revision == 1
         assert loaded.tools_by_name
 
@@ -138,7 +139,7 @@ class TestCrossServiceCompatibility:
         assert verify_digest(
             published_snapshot,
             published_snapshot["snapshot_digest"],
-            exclude=("snapshot_id", "snapshot_digest"),
+            exclude=SNAPSHOT_DIGEST_EXCLUDED,
         )
 
     def test_the_runtime_refuses_a_snapshot_whose_content_was_altered(
