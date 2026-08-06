@@ -7,7 +7,7 @@ orchestration.
 
 [![CI](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-345%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-349%20passing-brightgreen)](tests/)
 [![Demo runs offline](https://img.shields.io/badge/demo-no%20API%20key-informational)](#quick-start)
 
 **▶ [Watch the walkthrough](docs/assets/control-plane-walkthrough.webm)** — 40 seconds of the
@@ -380,12 +380,12 @@ tests/                      unit · contract · integration · security · e2e
 ## Testing
 
 ```bash
-make test           # 339 Python tests
+make test           # 343 Python tests
 make test-security  # only the tests that prove a control refuses something
 make check          # lint + typecheck + test, exactly what CI runs
 ```
 
-The console adds 6 console tests (`npm --prefix apps/control-plane/frontend test`), for 345 in total.
+The console adds 6 console tests (`npm --prefix apps/control-plane/frontend test`), for 349 in total.
 
 | Suite | Protects |
 |---|---|

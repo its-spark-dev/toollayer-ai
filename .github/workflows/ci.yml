@@ -353,6 +353,18 @@ jobs:
         # assertion about the running system rather than a screenshot generator.
         run: ./scripts/run_demo.sh
 
+      - name: Show service logs on failure
+        # Printed inline as well as uploaded. An uploaded artifact does not survive a job
+        # re-run, and re-running is the first thing anyone does with an intermittent failure —
+        # which is how the evidence for one was lost while investigating it.
+        if: failure()
+        run: |
+          for log in .demo-logs/*.log; do
+            echo "::group::${log}"
+            tail -200 "${log}" || true
+            echo "::endgroup::"
+          done
+
       - name: Upload service logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
