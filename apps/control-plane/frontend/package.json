@@ -1,7 +1,7 @@
 {
   "name": "toollayer-console",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Admin console for the ToolLayer AI Tool Control Plane.",
   "scripts": {

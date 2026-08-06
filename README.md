@@ -7,7 +7,7 @@ orchestration.
 
 [![CI](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-298%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-302%20passing-brightgreen)](tests/)
 [![Demo runs offline](https://img.shields.io/badge/demo-no%20API%20key-informational)](#quick-start)
 
 **▶ [Watch the walkthrough](docs/assets/control-plane-walkthrough.webm)** — 40 seconds of the
@@ -377,12 +377,12 @@ tests/                      unit · contract · integration · security · e2e
 ## Testing
 
 ```bash
-make test           # 292 Python tests
+make test           # 296 Python tests
 make test-security  # only the tests that prove a control refuses something
 make check          # lint + typecheck + test, exactly what CI runs
 ```
 
-The console adds 6 console tests (`npm --prefix apps/control-plane/frontend test`), for 298 in total.
+The console adds 6 console tests (`npm --prefix apps/control-plane/frontend test`), for 302 in total.
 
 | Suite | Protects |
 |---|---|
@@ -465,7 +465,15 @@ untrusted model output. The design reasoning — what was traded away and why �
 Two working documents sit behind it, for anyone who wants the process rather than the product:
 the scope decisions taken before any code was written
 ([`docs/PORTFOLIO_STRATEGY.md`](docs/PORTFOLIO_STRATEGY.md)) and the audits of what was actually
-verified at each version ([`docs/audits/`](docs/audits/v0.1.1-hardening.md)).
+verified at each version ([`docs/audits/`](docs/audits/v0.2.0-hardening.md)).
+
+## Releases
+
+Current release **v0.2.0** — authenticated snapshots and verified execution boundaries.
+[Release notes](docs/releases/v0.2.0.md) · [Changelog](CHANGELOG.md)
+
+Upgrading from v0.1.0 requires configuring snapshot signing material; the migration steps are
+in the [changelog](CHANGELOG.md).
 
 ## License
 

@@ -25,6 +25,7 @@ PUBLIC_DOCS = [
     REPO_ROOT / "SECURITY.md",
     REPO_ROOT / "CONTRIBUTING.md",
     REPO_ROOT / "CODE_OF_CONDUCT.md",
+    REPO_ROOT / "CHANGELOG.md",
 ]
 
 #: Phrases that were true of an earlier design and are not true now. Each one is a claim this

@@ -35,6 +35,7 @@ from toollayer_contracts import (
     generate_signing_key,
     sign_document,
 )
+from toollayer_contracts.errors import ToolLayerError
 
 pytestmark = pytest.mark.security
 
@@ -297,6 +298,59 @@ class TestUnsignedDemonstrationMode:
                     ),
                 ),
             )
+
+
+class TestContractCompatibilityWithUnsignedV1Snapshots:
+    """What happens to a snapshot published before signing existed.
+
+    The contract moved 1.0.0 -> 1.1.0 when `signature` was added. The field is optional, so an
+    older document still *parses*; whether it is *served* is a separate decision made by the
+    verification policy. Keeping those two answers distinct is the point — a version check and
+    a security policy failing for the same reason would make either one impossible to reason
+    about.
+    """
+
+    def _as_v1_unsigned(self, published: dict[str, Any]) -> dict[str, Any]:
+        """The same snapshot as a 1.0.0 Control Plane would have produced it."""
+        document = {name: value for name, value in published.items() if name != "signature"}
+        document["contract_version"] = "1.0.0"
+        document["snapshot_digest"] = content_digest(document, exclude=SNAPSHOT_DIGEST_EXCLUDED)
+        return document
+
+    def test_an_older_minor_version_is_still_a_supported_contract(
+        self, published_snapshot: dict[str, Any]
+    ) -> None:
+        from toollayer_contracts.version import require_supported
+
+        assert str(require_supported("1.0.0")) == "1.0.0"
+
+    def test_a_v1_unsigned_snapshot_is_refused_in_the_default_secure_mode(
+        self, published_snapshot: dict[str, Any], snapshot_verification: SnapshotVerification
+    ) -> None:
+        """Refused for the *signature*, not for the version — the message says which."""
+        with pytest.raises(SnapshotSignatureError, match="no producer signature"):
+            load_snapshot_document(
+                self._as_v1_unsigned(published_snapshot), verification=snapshot_verification
+            )
+
+    def test_a_v1_unsigned_snapshot_still_loads_in_explicit_unsigned_mode(
+        self, published_snapshot: dict[str, Any]
+    ) -> None:
+        loaded = load_snapshot_document(
+            self._as_v1_unsigned(published_snapshot),
+            verification=SnapshotVerification(mode="disabled"),
+        )
+        assert loaded.signed is False
+        assert loaded.snapshot.contract_version == "1.0.0"
+
+    def test_a_newer_minor_than_this_build_understands_is_refused(
+        self, published_snapshot: dict[str, Any], snapshot_verification: SnapshotVerification
+    ) -> None:
+        """The other direction: a 1.0.0 consumer refusing a signed document, in miniature."""
+        future = {**published_snapshot, "contract_version": "1.99.0"}
+        with pytest.raises(ToolLayerError) as caught:
+            load_snapshot_document(future, verification=snapshot_verification)
+        assert caught.value.code == ErrorCode.UNSUPPORTED_CONTRACT_VERSION
 
 
 class TestSigningMaterialNeverLeaks:

@@ -118,7 +118,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
 
     app = FastAPI(
         title="ToolLayer AI — LLM Orchestration Runtime",
-        version="0.1.0",
+        version="0.2.0",
         summary=(
             "Consumes a governed deployment snapshot and executes validated, authorized tool "
             "calls. A reference implementation, not a chatbot product."

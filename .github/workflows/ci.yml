@@ -206,7 +206,9 @@ jobs:
       - name: Package metadata and license
         run: |
           python -m pip install --upgrade twine
-          python -m twine check dist/*
+          # Named explicitly rather than globbed: `make sbom` writes into dist/sbom/, and
+          # twine rejects a directory as an unknown distribution format.
+          python -m twine check dist/*.whl dist/*.tar.gz
           /tmp/wheel-env/bin/python - <<'PY'
           from importlib.metadata import metadata
 
@@ -221,7 +223,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: distribution
-          path: dist/*
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
           retention-days: 7
 
   docker:
