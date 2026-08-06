@@ -142,7 +142,7 @@ configuration enables it.
 
 ## Testing strategy
 
-339 Python tests and 6 console tests, organized by what they protect rather than by coverage.
+343 Python tests and 6 console tests, organized by what they protect rather than by coverage.
 
 | Suite | Protects |
 |---|---|

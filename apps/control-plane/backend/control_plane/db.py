@@ -2,19 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Coroutine, Iterator
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from fastapi import Request, Response
+from fastapi.routing import APIRoute
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from control_plane.config import get_settings
 from control_plane.models import Base
 
-__all__ = ["create_schema", "get_engine", "get_session", "reset_engine_cache", "session_scope"]
+__all__ = [
+    "TransactionalRoute",
+    "create_schema",
+    "get_engine",
+    "get_session",
+    "reset_engine_cache",
+    "session_scope",
+]
 
 
 @lru_cache(maxsize=1)
@@ -76,10 +85,50 @@ def session_scope() -> Iterator[Session]:
         session.close()
 
 
-def get_session() -> Iterator[Session]:
-    """FastAPI dependency yielding a request-scoped session."""
+def get_session(request: Request) -> Iterator[Session]:
+    """FastAPI dependency yielding a request-scoped session.
+
+    The session is published on ``request.state`` so :class:`TransactionalRoute` can commit it
+    while the request is still in flight. The ``session_scope`` commit below still runs and is
+    still correct — by then the transaction is normally already committed and it is a no-op —
+    but it is a fallback, not the mechanism. See :class:`TransactionalRoute` for why.
+    """
     with session_scope() as session:
+        request.state.db_session = session
         yield session
+
+
+class TransactionalRoute(APIRoute):
+    """A route that commits its request's transaction *before* the response is sent.
+
+    FastAPI runs the exit half of a ``yield`` dependency after the response has already gone
+    to the client. Committing there means a ``201`` can be observed before the row it
+    describes is durable, and a client that then reads gets a ``404``.
+
+    On a reused keep-alive connection that is invisible: uvicorn finishes the whole ASGI
+    cycle, teardown included, before it reads the next request off that socket, so the two
+    requests serialize. Send the follow-up on a *different* connection and it is handled by an
+    independent task that can start while the first commit is still pending. Measured on this
+    codebase over 3,000 create-then-read pairs: zero failures reusing the connection, seven on
+    fresh ones. It reached CI twice as ``no deployment exists with that key`` and as a spurious
+    ``revision_conflict``, and both times passed on re-run.
+
+    Committing here closes that window. It also means a commit that *fails* raises while the
+    response is still being built, so it surfaces as a 500 instead of being logged after a
+    ``201`` the client has already accepted.
+    """
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handle = super().get_route_handler()
+
+        async def commit_before_responding(request: Request) -> Response:
+            response = await handle(request)
+            session: Session | None = getattr(request.state, "db_session", None)
+            if session is not None and session.in_transaction():
+                session.commit()
+            return response
+
+        return commit_before_responding
 
 
 def reset_engine_cache() -> None:

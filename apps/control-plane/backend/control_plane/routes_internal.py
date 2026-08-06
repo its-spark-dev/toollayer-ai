@@ -17,10 +17,10 @@ from fastapi import APIRouter, Depends, Header, Response
 from sqlalchemy.orm import Session
 
 from control_plane import service
-from control_plane.db import get_session
+from control_plane.db import TransactionalRoute, get_session
 from control_plane.dependencies import ServiceDep
 
-router = APIRouter(prefix="/internal/v1", tags=["internal"])
+router = APIRouter(prefix="/internal/v1", tags=["internal"], route_class=TransactionalRoute)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 

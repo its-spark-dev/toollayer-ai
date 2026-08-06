@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from control_plane import service
-from control_plane.db import get_session
+from control_plane.db import TransactionalRoute, get_session
 from control_plane.dependencies import AdminDep, SettingsDep
 from control_plane.models import Connector, ConnectorDraft, Deployment, DeploymentSnapshot
 from control_plane.review import ReviewState, ReviewUpdate, review_readiness
@@ -33,7 +33,7 @@ from toollayer_contracts.adapters import SUPPORTED_PROVIDERS, get_adapter
 from toollayer_contracts.errors import NotFoundError, ValidationError
 from toollayer_contracts.models import ConnectorDefinition
 
-router = APIRouter(prefix="/admin/v1", tags=["admin"])
+router = APIRouter(prefix="/admin/v1", tags=["admin"], route_class=TransactionalRoute)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
