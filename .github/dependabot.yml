@@ -1,51 +1,133 @@
-# Dependency updates, grouped so a routine week produces a small number of reviewable pull
-# requests rather than one per package. Security updates are deliberately left ungrouped:
-# they should be reviewable and mergeable on their own.
+# Dependency update policy.
+#
+# The goal is a repository that stays patched without generating a queue nobody reads. The
+# first version of this file grouped only minor and patch updates and left majors ungrouped,
+# which opened fourteen pull requests in one pass — Python 3.14, Node 26, TypeScript 7, React
+# 19, and a major bump for every GitHub Action. A maintenance signal that arrives fourteen at
+# a time is one that gets dismissed wholesale, which is worse than no signal.
+#
+# So: routine updates arrive grouped, one pull request per ecosystem per week. Major versions
+# are a deliberate decision made by a person, not a notification.
+#
+# Two things this deliberately does NOT weaken:
+#
+#   * **Security updates.** They come from Dependabot alerts, not from this file, and they are
+#     not subject to `open-pull-requests-limit` or to grouping. The `update-types` values below
+#     are namespaced `version-update:` precisely because they scope to version updates only, so
+#     ignoring a major here does not stop a security fix that happens to be a major. Ignoring
+#     by explicit `versions:` range would have that effect, which is why none is used.
+#   * **The supported-runtime policy.** Python 3.11/3.12 and Node 20 are what CI tests and what
+#     `docs/deployment.md` claims. Moving off them is a code change with test-matrix
+#     consequences, not a version bump.
 
 version: 2
 updates:
+  # ---------------------------------------------------------------------------------------
+  # Python
+  # ---------------------------------------------------------------------------------------
   - package-ecosystem: uv
     directory: "/"
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    # The lockfile is the reproducibility artifact; the ranges in pyproject.toml express the
+    # minimum this code supports. Raising a lower bound because a newer release exists tells a
+    # consumer that older versions stopped working, which is not true and not something this
+    # project has tested. `lockfile-only` keeps uv.lock and requirements.lock fresh and leaves
+    # the declared floors alone.
+    versioning-strategy: lockfile-only
     groups:
-      python-minor-and-patch:
+      python-dependencies:
+        patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
-      # Matches this repository's convention. The hygiene job rejects attribution trailers,
-      # and Dependabot adds none.
       prefix: "build(deps)"
 
+  # ---------------------------------------------------------------------------------------
+  # Console
+  # ---------------------------------------------------------------------------------------
   - package-ecosystem: npm
     directory: "/apps/control-plane/frontend"
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
     groups:
-      console-dev-dependencies:
-        dependency-type: development
+      console-dependencies:
+        patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      # React 19, TypeScript 7 and jsdom 30 each need the console's code and its type
+      # configuration looked at, not merged.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "build(deps)"
 
+  # ---------------------------------------------------------------------------------------
+  # GitHub Actions
+  # ---------------------------------------------------------------------------------------
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
       day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    groups:
+      # One pull request for the whole workflow surface. Five separate action bumps are five
+      # separate CI runs to review for what is nearly always the same decision.
+      github-actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Third-party actions here are pinned to a commit SHA with the tag in a trailing
+      # comment. A major bump changes the action's own contract — `gitleaks-action` v3 and
+      # `checkout` v5 both did — so it is reviewed rather than merged on a schedule.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "ci(deps)"
 
+  # ---------------------------------------------------------------------------------------
+  # Container base images
+  # ---------------------------------------------------------------------------------------
   - package-ecosystem: docker
-    # Base images are pinned to a patch version, which is only useful if something proposes
-    # the next one. Without this, pinning becomes never patching.
     directories:
       - "/docker"
     schedule:
       interval: weekly
       day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    groups:
+      # Base images move together or not at all: the Python image and the console's build and
+      # serve images are one deployable topology, and CI builds all of them in one job.
+      container-images:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Docker tags are read as semver, so `python:3.12.8` -> `3.14.0` counts as a *minor*
+      # bump and a major-only ignore would let it through. The runtime line is pinned to its
+      # patch stream instead: 3.12.8 -> 3.12.x is a security fix worth taking automatically,
+      # and 3.12 -> 3.14 is a supported-version decision that has to change the CI matrix and
+      # docs/deployment.md at the same time.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor"]
+      # Same argument for Node 20, which is what the console job builds against.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-minor"]
     commit-message:
       prefix: "build(deps)"
