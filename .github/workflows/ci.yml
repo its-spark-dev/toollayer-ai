@@ -258,11 +258,15 @@ jobs:
         # run_demo_docker.sh generates an ephemeral signing key, waits on the healthchecks,
         # asserts the runtime is requiring and verifying signatures, and runs the same
         # assertion harness the local demo runs.
-        run: make demo-docker
+        #
+        # KEEP_UP leaves the stack running for the assertions below. They must not start it
+        # themselves: the signing key lives only in the demo script's environment, so a fresh
+        # `docker compose up` here would give the runtime an empty trusted key ring and it
+        # would — correctly — refuse to start.
+        run: KEEP_UP=1 make demo-docker
 
       - name: The Python services run as a non-root user
         run: |
-          docker compose up -d --wait --wait-timeout 240
           for service in control-plane runtime demo-api; do
             uid="$(docker compose exec -T "$service" id -u | tr -d '\r')"
             if [ "$uid" = "0" ]; then
