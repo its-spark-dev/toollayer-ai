@@ -9,7 +9,7 @@
 # from the build that was tested; docs/deployment.md records how these are updated so pinning
 # does not turn into never patching.
 
-FROM node:20.18.1-alpine AS build
+FROM node:26.5.1-alpine AS build
 WORKDIR /app
 
 COPY apps/control-plane/frontend/package.json apps/control-plane/frontend/package-lock.json ./
