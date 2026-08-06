@@ -42,7 +42,7 @@ dev = [
     "types-PyYAML>=6.0",
     "types-jsonschema>=4.21",
 ]
-postgres = ["psycopg[binary]>=3.1"]
+postgres = ["psycopg[binary]>=3.3.4"]
 # Only needed to regenerate the README screenshots; not required to run or test anything.
 capture = ["playwright>=1.44"]
 
