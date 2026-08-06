@@ -38,7 +38,7 @@ C4Context
 |---|---|---|
 | Connector administrator | Trusted | Everything at configuration time. Holds the admin token. |
 | End user | Untrusted | Supplies natural-language text. Their input reaches tool selection and argument generation, and is validated at every step. |
-| AI application | Partially trusted | Asserts the caller's identity and roles. ToolLayer AI does not authenticate users; it enforces what the client asserts. |
+| AI application | Partially trusted | Asserts the caller's identity and roles in the default `asserted_header` mode, in which the runtime enforces what the client asserts rather than authenticating it. In `verified_token` mode it must present a signed token the runtime verifies. `/healthz` reports which. |
 | Model provider | **Untrusted** | Proposes a tool and arguments. Every proposal is re-checked against the snapshot and the published schema. |
 | Upstream API | **Untrusted** | Returns content that is treated as data and never as instructions. |
 
@@ -86,10 +86,10 @@ Each arrow crossing into the trusted zone has a named control:
 |---|---|
 | End-user text → runtime | Length bounds; the text only ever reaches the provider, never the request builder |
 | Model proposal → execution | Tool name resolved against the snapshot; arguments validated against the published schema |
-| Client role assertion → authorization | Roles are enforced as asserted; the runtime does not authenticate |
+| Client role assertion → authorization | In `asserted_header` mode roles are enforced as asserted and the runtime authenticates nobody; in `verified_token` mode they come from verified claims and assertion headers are refused |
 | Runtime → control plane | Service token, read-only endpoint, versioned path |
 | Runtime → upstream API | Origin allowlist, method allowlist, post-resolution address check, no redirects, bounds |
-| Upstream response → runtime | Size cap, defensive decoding, marked `untrusted`, never re-enters selection |
+| Upstream response → runtime | Streaming size cap, defensive decoding, marked `untrusted`, never re-enters selection |
 
 ## What is out of scope
 

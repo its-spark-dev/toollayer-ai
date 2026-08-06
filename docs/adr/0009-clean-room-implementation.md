@@ -46,7 +46,7 @@ not public.
 
 **Accepted.** The claim rests on the documented method and on a pre-publication audit of the
 working tree and full Git history. It is stated as a claim, not proven — and the audit result
-is recorded in `PRE_PUBLICATION_REVIEW.md` rather than asserted in a README line.
+is recorded in `docs/audits/v0.1.0-pre-publication.md` rather than asserted in a README line.
 
 ## Enforcement
 

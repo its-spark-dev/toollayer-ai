@@ -133,6 +133,29 @@ class TestCrossServiceCompatibility:
         assert loaded.revision == 1
         assert loaded.tools_by_name
 
+    def test_every_published_timestamp_is_a_valid_rfc_3339_date_time(
+        self, published_snapshot: dict[str, Any]
+    ) -> None:
+        """Format keywords are only enforced when a format validator is installed.
+
+        Without ``rfc3339-validator``, jsonschema's ``FormatChecker`` silently skips
+        ``date-time`` — so "the document validates against the schema" quietly meant "except
+        for formats". It did not: timestamps read back from SQLite came out naive, giving
+        ``2026-08-06T01:53:37`` with no UTC offset. This asserts the format directly so the
+        check does not depend on which optional packages happen to be present.
+        """
+        from jsonschema import FormatChecker
+
+        checker = FormatChecker()
+        stamps = [published_snapshot["created_at"]]
+        for connector in published_snapshot["connectors"]:
+            stamps.extend(connector["audit"].values())
+
+        assert stamps
+        for stamp in stamps:
+            assert checker.conforms(stamp, "date-time"), stamp
+            assert stamp.endswith("Z"), f"{stamp} carries no UTC offset"
+
     def test_the_snapshot_verifies_against_its_own_digest(
         self, published_snapshot: dict[str, Any]
     ) -> None:

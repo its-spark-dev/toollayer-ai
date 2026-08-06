@@ -562,6 +562,10 @@ referencing==0.37.0 \
     # via
     #   jsonschema
     #   jsonschema-specifications
+rfc3339-validator==0.1.4 \
+    --hash=sha256:138a2abdf93304ad60530167e51d2dfb9549521a836871b88d7f4695d0022f6b \
+    --hash=sha256:24f6ec1eda14ef823da9e36ec7113124b39c04d50a4d3d3a3c2859577e7791fa
+    # via toollayer-ai
 rpds-py==2026.6.3 \
     --hash=sha256:0be972be84cfcaf46c8c6edf690ca0f154ac17babf1f6a955a51579b34ad2dc5 \
     --hash=sha256:127565fead0a10943b282957bd5447804ff3160ad79f2ad2635e6d249e380680 \
@@ -682,6 +686,10 @@ rpds-py==2026.6.3 \
     # via
     #   jsonschema
     #   referencing
+six==1.17.0 \
+    --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
+    --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
+    # via rfc3339-validator
 sqlalchemy==2.0.51 \
     --hash=sha256:0378d055e9e8cd6ce4d8dff683bdd3d7d413533c4ee51d67a2b1e0f9eacc0f23 \
     --hash=sha256:08a204d8b5638717c26a24df18fcf40af45a6b22e35b70b1d62f0113c2e278e8 \

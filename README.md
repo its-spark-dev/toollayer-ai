@@ -7,8 +7,13 @@ orchestration.
 
 [![CI](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/its-spark-dev/toollayer-ai/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-186%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-298%20passing-brightgreen)](tests/)
 [![Demo runs offline](https://img.shields.io/badge/demo-no%20API%20key-informational)](#quick-start)
+
+**▶ [Watch the walkthrough](docs/assets/control-plane-walkthrough.webm)** — 40 seconds of the
+real console, recorded from the running application. Or read the
+[case study](docs/portfolio-case-study.md) for the design reasoning, or run it yourself with
+[`make demo`](#quick-start).
 
 ---
 
@@ -22,8 +27,8 @@ Deriving that from a specification at startup leaves you with no artifact: nothi
 version, verify, or roll back. And the component choosing the call is a language model, which
 produces plausible output rather than correct output.
 
-**ToolLayer AI turns an OpenAPI document into a reviewed, versioned, digest-verified artifact,
-and gives a runtime the machinery to execute only that — under policy.**
+**ToolLayer AI turns an OpenAPI document into a reviewed, versioned, cryptographically signed
+artifact, and gives a runtime the machinery to execute only that — under policy.**
 
 ![The Tool Control Plane's review console. On the left, the source OpenAPI operation
 listSupportTickets with its status parameter referencing a shared TicketStatus schema. On the
@@ -34,7 +39,8 @@ reference.](docs/assets/00-hero.png)
 <sub>**One OpenAPI operation in, one governed tool definition out.** The `$ref` is resolved, the
 input schema is closed, and the model-facing description is separated from the execution
 details the model never sees. Conversion is deterministic — the same document always produces
-the same tools, which is what makes the published digest mean something.</sub>
+the same tools, which is what lets the published digest identify content rather than a moment in
+time.</sub>
 
 ## Architecture
 
@@ -57,8 +63,8 @@ flowchart LR
 
     Admin -->|"OpenAPI document"| I
     Client -->|"natural language + roles"| Disc
-    D -->|"immutable snapshot, digest-verified"| L
-    E -->|"allowlisted, bounded, no redirects"| API
+    D -->|"immutable snapshot, signed + digest-addressed"| L
+    E -->|"allowlisted, streamed and bounded, no redirects"| API
 ```
 
 Two independently deployable services that **never import each other**. They communicate
@@ -178,11 +184,12 @@ docker compose up -d --build && make demo-docker
 
 Then open the console at <http://localhost:5173>.
 
-> **What has been verified.** The local path above — `make setup`, `make test`, `make demo`,
-> `make capture` — is exercised from a clean clone and in CI. The Docker Compose topology is
-> provided and statically reviewed, but container execution has not been independently
-> validated in the environment this repository was built in. `docs/deployment.md` §11 records
-> exactly what that review covered.
+> **What has been verified.** Both paths are executed in CI. The local path — `make setup`,
+> `make test`, `make demo`, `make capture` — runs from a clean clone. The Docker path builds
+> every image, brings the topology up on its health checks, runs the same demonstration through
+> it, and asserts that every container is non-root, that no image carries signing material, and
+> that the runtime verified the snapshot it is serving. `docs/deployment.md` §10 records what is
+> verified and by what.
 
 ### The pipeline, end to end
 
@@ -229,8 +236,8 @@ active, each with its own content-derived identifier and digest. Below, the exac
 the deployment may serve, with effect-class, role-restriction and confirmation badges — the
 status-change tool marked write, support-lead and confirmation.](docs/assets/05-deployment-snapshot.png)
 
-**6 · Execute** — the Runtime loads the snapshot, verifies its digest, and runs one governed
-tool call.
+**6 · Execute** — the Runtime loads the snapshot, recomputes its digest, verifies its signature
+against a trusted key, and runs one governed tool call.
 
 ![A terminal showing a natural-language request resolved into a governed execution: the tool
 selected from four the caller may use with one hidden by policy, generated arguments, schema
@@ -262,7 +269,8 @@ Owns configuration time. It decides what a tool *is*, and never processes a user
 - A review step where a human decides what publishes, what it says, and who may call it.
 - **Server-authoritative publication**: the artifact is rebuilt from stored state, so a
   compromised console cannot publish a definition nobody approved.
-- Immutable versions and deployment snapshots, verified by SHA-256 over canonical JSON.
+- Immutable versions and deployment snapshots. A SHA-256 digest over canonical JSON identifies
+  the content; an Ed25519 signature over the same canonical bytes authenticates the producer.
 - A console showing the source operation, the generated tool, and both provider projections
   side by side.
 
@@ -306,13 +314,30 @@ Every control below has a test. If a claim here has no test, it is not a claim.
 | Injected instructions in upstream content cause no second call | [`TestPromptAndToolInjection`](tests/security/test_execution_boundary.py) |
 | A URL in the request text cannot change the destination | [`TestPromptAndToolInjection`](tests/security/test_execution_boundary.py) |
 | SSRF: an allowlisted name resolving to metadata is refused | [`TestDestinationPolicy`](tests/unit/test_policy_engine.py) |
-| Redirects refused, responses capped, timeouts finite | [`TestDestinationControls`](tests/security/test_execution_boundary.py) |
+| A malformed port or authority is a structured refusal, not a 500 | [`TestMalformedDestinations`](tests/unit/test_policy_engine.py) |
+| Redirects refused, timeouts finite | [`TestDestinationControls`](tests/security/test_execution_boundary.py) |
+| Responses are bounded **while being read**, against a real server | [`TestTheStreamIsNotDrained`](tests/integration/test_streaming_response_limits.py) |
 | Admin and service credentials cannot substitute for each other | [`TestControlPlaneAuthentication`](tests/security/test_execution_boundary.py) |
 | Rejected values never appear in an error or a log | [`test_a_rejected_argument_is_never_echoed_back`](tests/security/test_execution_boundary.py) |
-| A tampered snapshot is refused | [`tests/contract/`](tests/contract/test_contract_compatibility.py) |
+| A snapshot edited without updating its digest is refused | [`TestTampering`](tests/security/test_snapshot_authenticity.py) |
+| A snapshot whose content **and** digest were both replaced is still refused | [`test_content_and_digest_both_replaced_is_still_refused`](tests/security/test_snapshot_authenticity.py) |
+| A signature from an untrusted or unknown key is refused | [`TestSignatureRejection`](tests/security/test_snapshot_authenticity.py) |
+| Signing keys never reach a response, a log, or the console bundle | [`TestSigningMaterialNeverLeaks`](tests/security/test_snapshot_authenticity.py) |
+| A verified-identity runtime refuses asserted role headers | [`TestVerifiedTokenMode`](tests/security/test_caller_authentication.py) |
+| One request uses one immutable snapshot revision throughout | [`TestOneRequestOneRevision`](tests/integration/test_snapshot_consistency.py) |
+| A loaded snapshot cannot be mutated through a retained reference | [`TestDeepImmutability`](tests/integration/test_snapshot_consistency.py) |
 
 Default deny throughout: an empty destination allowlist permits nothing, an unreadable access
-policy denies, and every bound on an outbound request is finite.
+policy denies, snapshot signature verification is required unless explicitly disabled, and every
+bound on an outbound request is finite.
+
+**Two claims that are easy to conflate, and are kept apart here.** The SHA-256 digest identifies
+content: it gives content addressing, a meaningful ETag, and detection of corruption or of an
+edit that forgot to update it. It authenticates nobody — recomputing SHA-256 needs no secret, so
+an attacker who can rewrite a payload rewrites its digest too. The Ed25519 signature is what
+holds against that attacker, assuming the runtime's trusted-key configuration is intact. Neither
+replaces TLS, which protects the transport and authenticates the *service* rather than the
+*artifact*; a real deployment needs both.
 
 → [`docs/threat-model.md`](docs/threat-model.md), including what this does **not** defend
 against.
@@ -322,11 +347,12 @@ against.
 | Layer | Choice |
 |---|---|
 | Services | Python 3.11+, FastAPI, Pydantic v2 |
+| Cryptography | Ed25519 signatures over canonical JSON (`cryptography`) |
 | Persistence | SQLAlchemy 2, Alembic, SQLite (default) or PostgreSQL |
 | Standards | OpenAPI 3.0/3.1, JSON Schema Draft 2020-12, RFC 6901, RFC 9110, SemVer 2.0.0 |
 | Console | React 18, TypeScript, Vite |
 | Quality | pytest, Ruff, mypy (strict), ESLint, Vitest |
-| Packaging | Docker Compose, GitHub Actions |
+| Packaging | Docker Compose, GitHub Actions, `uv` for a locked dependency graph |
 
 Nothing here is present for keyword value. Every dependency is used by code that ships.
 
@@ -351,12 +377,12 @@ tests/                      unit · contract · integration · security · e2e
 ## Testing
 
 ```bash
-make test           # 180 Python tests
+make test           # 292 Python tests
 make test-security  # only the tests that prove a control refuses something
 make check          # lint + typecheck + test, exactly what CI runs
 ```
 
-The console adds 6 more (`npm --prefix apps/control-plane/frontend test`), for 186 in total.
+The console adds 6 console tests (`npm --prefix apps/control-plane/frontend test`), for 298 in total.
 
 | Suite | Protects |
 |---|---|
@@ -394,15 +420,25 @@ Further reading: [architecture](docs/architecture.md) ·
 
 Stated here rather than discovered later:
 
-- **Static bearer tokens.** No rotation, expiry, or per-actor identity. Not an identity system.
-- **The runtime does not authenticate anyone.** It enforces the roles the client asserts.
+- **Static bearer tokens between the two services.** No rotation, expiry, or per-actor identity.
+  Not an identity system.
+- **Caller identity is asserted, not verified, in the default demo topology.** A `verified_token`
+  mode exists and checks signature, issuer, audience and expiry offline; the demo runs in
+  `asserted_header` mode and `/healthz` says which is in force.
+- **No TLS in the compose topology.** Snapshot signatures authenticate the artifact, not the
+  transport.
 - **Disablement is not immediate revocation.** It takes effect at the next snapshot refresh.
 - **One tool per request.** No chaining, no conversation memory, no streaming.
 - **Single-tenant.** One organization scope.
 - **No rate limiting, metrics, or tracing.**
 - **The canonical format is project-defined**, not an industry standard, and perfect
   cross-provider portability is not claimed.
-- **A time-of-check-to-time-of-use gap** exists between DNS resolution and connection.
+- **A time-of-check-to-time-of-use gap** exists between DNS resolution and connection. Every
+  resolved address is checked before the request is sent, but the transport resolves again when
+  it connects. No pinned-IP protection is claimed.
+- **The audit trail is ordinary database rows.** A record of who published what and when, not
+  tamper-evident evidence.
+- **Disablement is not immediate revocation.** It takes effect at the next snapshot refresh.
 
 Full list: [`docs/feature-parity.md`](docs/feature-parity.md).
 
@@ -423,13 +459,16 @@ before any code was written — is documented in
 
 Built to demonstrate applied AI platform engineering: OpenAPI processing, provider-neutral
 contract design, immutable versioning, service-boundary design, and security engineering around
-untrusted model output.
-
-The intent, audience, and scope controls are stated up front in
-[`docs/PORTFOLIO_STRATEGY.md`](docs/PORTFOLIO_STRATEGY.md), and the reasoning is written up as a
+untrusted model output. The design reasoning — what was traded away and why — is written up as a
 [case study](docs/portfolio-case-study.md).
+
+Two working documents sit behind it, for anyone who wants the process rather than the product:
+the scope decisions taken before any code was written
+([`docs/PORTFOLIO_STRATEGY.md`](docs/PORTFOLIO_STRATEGY.md)) and the audits of what was actually
+verified at each version ([`docs/audits/`](docs/audits/v0.1.1-hardening.md)).
 
 ## License
 
 [MIT](LICENSE). Every runtime dependency is under a permissive license (MIT, BSD-3-Clause, or
-Apache-2.0); the inventory is in [`PRE_PUBLICATION_REVIEW.md`](PRE_PUBLICATION_REVIEW.md) §7.
+Apache-2.0); the inventory is in [`docs/audits/v0.1.0-pre-publication.md`](docs/audits/v0.1.0-pre-publication.md) §7,
+and CI regenerates it on every run.

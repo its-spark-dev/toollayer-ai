@@ -59,7 +59,8 @@ would apply one set of assumptions to both — and, concretely, would give the c
 accepts model-driven requests the credential that can publish tools.
 
 They share no database. They communicate through one read-only versioned endpoint serving an
-immutable, digest-verified snapshot. Full reasoning in ADR 0002.
+immutable snapshot: digest-addressed for content, signed for producer authenticity. Full
+reasoning in ADR 0002.
 
 ## OpenAPI-to-tool conversion
 
@@ -127,11 +128,11 @@ Layered, default-deny, and tested. The full analysis is in `docs/threat-model.md
 |---|---|
 | Ingestion | Bounded, strict, offline. No HTTP client exists in the converter package. |
 | Publication | Server-authoritative rebuild from stored state |
-| Artifact | Digest-verified by the consumer, not asserted by the producer |
+| Artifact | Two separate claims: a content digest the consumer recomputes, and a producer signature the consumer verifies against a key it already holds |
 | Authorization | One function, both boundaries |
 | Arguments | Closed schema; the request built from bindings |
 | Destination | Empty allowlist permits nothing; exact origin; post-resolution address checks |
-| Transport | No redirects, no proxies, finite timeouts, bounded response |
+| Transport | No redirects, no proxies, no retries, finite timeouts, response bounded while streaming |
 | Results | Marked untrusted; no path back into selection |
 
 The SSRF control is worth one more sentence, because the naive version is a URL allowlist and
@@ -141,7 +142,7 @@ configuration enables it.
 
 ## Testing strategy
 
-180 tests, organized by what they protect rather than by coverage.
+292 Python tests and 6 console tests, organized by what they protect rather than by coverage.
 
 | Suite | Protects |
 |---|---|
@@ -184,8 +185,13 @@ serving it beats refusing every request.
 
 Stated here rather than discovered later:
 
-- Static bearer tokens; no rotation, expiry, or per-actor identity.
-- The runtime enforces roles the client asserts; it does not authenticate anyone.
+- Static bearer tokens between the two services; no rotation, expiry, or per-actor identity.
+  Snapshot signing keys do rotate, through a trusted key ring.
+- Caller identity is asserted rather than verified in the default topology. A `verified_token`
+  mode checks a signed token's signature, issuer, audience and expiry; the demo runs
+  `asserted_header` and `/healthz` reports which is in force.
+- No TLS in the compose topology. Signatures authenticate the artifact, not the transport.
+- The audit trail is ordinary database rows: a record, not tamper-evident evidence.
 - Disablement is not immediate revocation — it takes effect at the next refresh.
 - One tool per request; no chaining, no conversation memory.
 - Single-tenant.
@@ -208,7 +214,8 @@ In the order that would add the most:
 
 - Designing a service boundary and enforcing it with contracts and tests rather than intent.
 - Deterministic transformation with an explicit, enumerated refusal set.
-- Immutable, content-addressed artifacts and verifiable integrity.
+- Immutable, content-addressed artifacts, with producer authenticity separated from content
+  integrity rather than conflated with it.
 - Treating model output as untrusted input and putting the control on the execution path.
 - Layered SSRF defense that survives DNS-level attacks.
 - Contract testing between two representations of one schema — which caught a real defect.

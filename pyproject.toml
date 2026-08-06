@@ -18,6 +18,10 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
     "jsonschema>=4.21",
+    # jsonschema's FormatChecker silently skips `date-time` unless this is installed, so
+    # without it "validated against the schema" quietly means "validated except for formats"
+    # — which is how a timestamp with no UTC offset passed validation for months.
+    "rfc3339-validator>=0.1.4",
     "PyYAML>=6.0",
     "SQLAlchemy>=2.0",
     "alembic>=1.13",

@@ -166,7 +166,7 @@ Two conventions:
   document depends on would break digest verification for artifacts already published.
 - **The stored documents are versioned by `contract_version`, not by the schema.** A contract
   change is a contract-version bump and, if needed, a read-time migration — not an `UPDATE`
-  over rows that other systems have already verified by digest.
+  over rows that other systems have already checked by digest and signature.
 
 ## 7. Indexes and constraints
 

@@ -390,7 +390,8 @@ export default function App() {
             <p>
               A snapshot pins exactly one published version per connector. It is never edited —
               a change produces the next revision, and the previous one stays byte-identical.
-              The Runtime reads the active snapshot and verifies its digest before serving.
+              The Runtime recomputes the digest to check the content, then verifies the
+              signature to check who produced it, before serving anything.
             </p>
             <table className="table">
               <thead>

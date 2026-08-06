@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from control_plane.review import ReviewState, review_readiness
@@ -140,4 +140,14 @@ def build_connector_document(
 
 
 def _rfc3339(value: datetime) -> str:
-    return value.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    """Format a timestamp as RFC 3339, which the contract's ``date-time`` format requires.
+
+    A naive datetime is treated as UTC rather than formatted without an offset. Timestamps
+    are written to the database as aware values but several backends — SQLite among them —
+    return them naive, so the value reaching this function depends on whether it was just
+    constructed or just read back. Without this, a published document's ``created_at`` came
+    out as ``2026-08-06T01:53:37`` with no offset, which is not a valid ``date-time``.
+    """
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")

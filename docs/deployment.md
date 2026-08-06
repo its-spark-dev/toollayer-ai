@@ -112,10 +112,68 @@ Every setting is an environment variable, read once at startup and validated. Se
 | `TOOLLAYER_ALLOW_LOOPBACK_DESTINATIONS` | `false` | Local development only |
 | `TOOLLAYER_ALLOW_PRIVATE_ADDRESSES` | `false` | Local development only |
 | `TOOLLAYER_SNAPSHOT_REFRESH_SECONDS` | `60` | Bounds how stale a snapshot may be |
-| `TOOLLAYER_MAX_RESPONSE_BYTES` | `1048576` | Hard-capped at 16 MiB |
+| `TOOLLAYER_MAX_RESPONSE_BYTES` | `1048576` | Hard-capped at 16 MiB. Enforced while streaming. |
+| `TOOLLAYER_SNAPSHOT_SIGNING_KEY` | **empty** | Control Plane. base64url Ed25519 seed. Empty publishes unsigned. |
+| `TOOLLAYER_SNAPSHOT_SIGNING_KEY_ID` | **empty** | Must be set together with the key |
+| `TOOLLAYER_SNAPSHOT_TRUSTED_KEYS` | **empty** | Runtime. `key_id:base64url_public_key`, comma separated |
+| `TOOLLAYER_SNAPSHOT_VERIFICATION` | `required` | `required` or `disabled`. No other value is accepted. |
+| `TOOLLAYER_CALLER_AUTH_MODE` | `asserted_header` | `asserted_header` or `verified_token` |
+| `TOOLLAYER_CALLER_TOKEN_TRUSTED_KEYS` | **empty** | Required in `verified_token` mode |
+| `TOOLLAYER_CALLER_TOKEN_ISSUER` | **empty** | Required in `verified_token` mode |
+| `TOOLLAYER_CALLER_TOKEN_AUDIENCE` | **empty** | Required in `verified_token` mode |
 
 The Control Plane refuses to start if the two tokens are equal, and logs a warning if either is
-still the shipped placeholder.
+still the shipped placeholder. The Runtime refuses to start if verification is `required` and no
+trusted key is configured, and if `verified_token` mode is selected without an issuer, an
+audience, and at least one key. Both are deliberate: a security control that turns itself off
+when it is hardest to configure is not a control.
+
+### Snapshot signing keys
+
+The digest and the signature answer different questions, and the key management below only
+concerns the second. See `docs/threat-model.md` §5.11.
+
+Generate a pair:
+
+```bash
+python scripts/generate_signing_key.py --key-id prod-2026-08
+```
+
+That prints three environment variables. The **private** one
+(`TOOLLAYER_SNAPSHOT_SIGNING_KEY`) goes only to the Control Plane and belongs in a secret
+manager; the **public** one (`TOOLLAYER_SNAPSHOT_TRUSTED_KEYS`) goes to every runtime and is
+safe to put in ordinary configuration. Nothing writes a key to disk, and no key is committed
+anywhere in this repository — `make demo` and `make demo-docker` generate an ephemeral pair per
+run, and a CI job fails if a key-shaped file ever appears in the tree.
+
+**Rotating.** `TOOLLAYER_SNAPSHOT_TRUSTED_KEYS` accepts several entries so a rotation does not
+need every service to change in the same instant:
+
+1. Add the new public key to every runtime's trusted list, alongside the old one.
+2. Switch the Control Plane's signing key to the new pair. Existing snapshots stay valid; new
+   ones are signed by the new key.
+3. Once no runtime is serving a snapshot signed by the old key, remove it from the trusted
+   lists.
+
+Skipping step 1 makes every runtime refuse the next snapshot — which is the correct failure, and
+why the overlap exists. `TestKeyRotation` covers both halves.
+
+### Base image and dependency updates
+
+Base images are pinned to a patch version (`python:3.12.8-slim`, `node:20.18.1-alpine`,
+`nginx:1.27.3-alpine`) rather than a floating tag, so a rebuild is the build that was tested.
+Pinning is only safe if something proposes the next pin: Dependabot watches `docker/`,
+`uv`, npm, and the GitHub Actions used here, and opens a weekly grouped pull request. A pinned
+image that nobody updates is worse than a floating one.
+
+Python dependencies resolve through `uv.lock` and install from `requirements.lock` with hashes.
+After changing `pyproject.toml`:
+
+```bash
+make lock
+```
+
+A CI job fails if the two lockfiles drift apart.
 
 ## 7. Persistence
 
@@ -160,30 +218,44 @@ Being precise about this matters more than sounding finished.
 | Path | Status |
 |---|---|
 | `make setup` on a clean clone | **Verified** — Python 3.11 and 3.12 |
-| `make test` (180 tests) | **Verified** — clean clone and CI |
-| `make lint`, `make typecheck` | **Verified** |
+| `make test` (292 Python tests) | **Verified** — clean clone and CI |
+| `make lint`, `make typecheck` | **Verified** — Ruff check, Ruff format, strict mypy |
 | `make demo` (three services, full flow) | **Verified** — default and overridden ports |
 | `make capture` (Playwright asset capture) | **Verified** |
-| Docker image build | **Not executed here.** Statically reviewed: every `COPY` path exists, the entry points match the applications, the ports match this document |
-| `docker compose up` end to end | **Not executed here.** The topology parses, service names and health checks are consistent, and the runtime's allowlist names the demo API's service by exact origin |
+| Wheel build, clean install, module and schema import | **Verified** — CI `package` job |
+| Docker image build | **Verified** — CI `docker` job builds every image on every run |
+| `docker compose up` end to end | **Verified** — CI brings the topology up on its health checks and runs `make demo-docker` through it |
+| Containers run as non-root | **Verified** — asserted per service in CI |
+| No signing key in any image | **Verified** — build history and filesystem both checked in CI |
+| Dependency vulnerability scan | **Verified** — `pip-audit` over `requirements.lock`, `npm audit` at `high` |
+| Secret scan over full Git history | **Verified** — gitleaks with `fetch-depth: 0` |
+| Static analysis | **Configured** — CodeQL workflow, `security-extended`, weekly and on change |
 
-The Docker path is *provided*, not *proven*. A Docker daemon was unavailable in the
-environment this repository was developed in, so the honest statement is that the packaging is
-included and reviewed rather than that a container deployment has been demonstrated.
+The Docker path is executed, not merely provided. The `docker` job validates the Compose file,
+builds every image, waits on the health checks, runs the same assertion harness the local demo
+runs, additionally asserts the runtime is *requiring* and *verifying* snapshot signatures, and
+tears the topology down with `if: always()` so a failed assertion does not leave a volume behind.
 
-To validate it yourself:
+To reproduce it yourself:
 
 ```bash
-docker compose up -d --build
 make demo-docker
-docker compose down -v
 ```
+
+That generates an ephemeral signing pair, brings the stack up, runs the demonstration, and
+tears it down. `KEEP_UP=1 make demo-docker` leaves it running so you can open the console.
 
 ## 11. Production limitations
 
 **This topology is not production-ready, and the gaps are specific:**
 
-- **Static bearer tokens.** No rotation, no expiry, no per-actor identity.
+- **Static bearer tokens between the two services.** No rotation, no expiry, no per-actor
+  identity. Snapshot *signing* keys do rotate through the trusted key ring; the admin and
+  service tokens do not.
+- **Caller identity is asserted, not verified, in this topology.** `verified_token` mode exists
+  and is production-shaped, but the compose file runs `asserted_header` and `/healthz` says so.
+  Populating the trusted key ring from a real identity provider's JWKS endpoint is not
+  implemented.
 - **The console ships its token in the browser bundle.** It must sit behind an authenticating
   proxy anywhere real.
 - **No TLS in the compose file.** Services speak plaintext HTTP on a private network. Real
@@ -192,6 +264,15 @@ docker compose down -v
 - **No horizontal scaling story.** The runtime is stateless and would scale, but nothing here
   addresses snapshot distribution across many instances.
 - **No metrics or tracing.** Structured logs with redaction, and nothing else.
+- **No tamper-evident audit log.** Publication records who and when as ordinary database rows.
+  They are mutable by anyone with database access, so this is a record rather than evidence.
+- **A DNS time-of-check-to-time-of-use gap remains.** Every resolved address is checked before
+  the request is sent, but the transport resolves the name again when it connects. Closing it
+  needs a transport that dials the exact verified address while preserving TLS SNI and the
+  `Host` header. That is not implemented, and no pinned-IP protection is claimed.
+- **Revocation is polling, not push.** Disabling a version takes effect at the consuming
+  runtime's next snapshot refresh — bounded by `TOOLLAYER_SNAPSHOT_REFRESH_SECONDS`, not
+  immediate.
 - **No rate limiting, quotas, or backpressure.**
 - **No secret management.** Secrets come from the environment. There is no vault integration
   and no encryption at rest.
