@@ -223,7 +223,7 @@ jobs:
           PY
 
       - name: Upload the distribution
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: distribution
           path: |
@@ -315,7 +315,7 @@ jobs:
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-logs
           path: docker-compose.log
@@ -355,7 +355,7 @@ jobs:
 
       - name: Upload service logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: demo-logs
           path: .demo-logs/
@@ -415,7 +415,7 @@ jobs:
         run: ./scripts/generate_sbom.sh
 
       - name: Upload the SBOM and license inventory
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: |
