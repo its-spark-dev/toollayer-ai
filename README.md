@@ -471,8 +471,9 @@ verified at each version ([`docs/audits/`](docs/audits/v0.2.0-hardening.md)).
 
 ## Releases
 
-Current release **v0.2.0** — authenticated snapshots and verified execution boundaries.
-[Release notes](docs/releases/v0.2.0.md) · [Changelog](CHANGELOG.md)
+Current release **v0.2.1** — YAML ingestion hardening.
+[Release notes](docs/releases/v0.2.1.md) · [Changelog](CHANGELOG.md) ·
+[v0.2.0 notes](docs/releases/v0.2.0.md)
 
 Upgrading from v0.1.0 requires configuring snapshot signing material; the migration steps are
 in the [changelog](CHANGELOG.md).
