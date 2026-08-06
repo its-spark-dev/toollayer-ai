@@ -12,6 +12,68 @@ industry standard.
 
 Nothing yet.
 
+## [0.2.1] — 2026-08-06
+
+Contract version: **unchanged at 1.1.0.** Migration impact: **none** — the set of documents
+this ingester accepts is identical.
+
+A patch release hardening the YAML side of the ingestion boundary. It began as a CodeQL alert
+that turned out to be a false positive, and the investigation it prompted found three real
+defects in the same function — two of which turned a small authenticated upload into an
+HTTP 500.
+
+### Fixed
+
+- **Deeply nested documents are refused instead of crashing the request.** PyYAML's scanner
+  and parser are iterative but its *composer* is not, so a document nested past CPython's
+  stack limit raised `RecursionError` from inside the library before reaching the depth check
+  in `_enforce_shape` — the code path whose comment promises exactly that cannot happen. A
+  692-byte upload was enough. Now reported as `document_too_large` ("the document nests too
+  deeply"), the limit it actually hit.
+- **A non-scalar mapping key is a structured refusal.** `? {a: 1}` is valid YAML and
+  unrepresentable in JSON. It reached a hashability check with an unhashable value and raised
+  an unhandled `TypeError`, also surfacing as an HTTP 500. Now `invalid_source_document`.
+- **YAML merge keys are refused as themselves.** `<<: *anchor` was reported as "not
+  well-formed YAML", which is untrue — it is well-formed and deliberately unsupported,
+  because resolving one gives the reviewed document and the file on disk different key sets.
+
+### Changed
+
+- **The YAML loader is instantiated directly rather than through `yaml.load(..., Loader=...)`.**
+  The generic call takes its safety from an argument defined elsewhere; removing it leaves the
+  loader class named at the only place it is used. A new import-time check refuses to start a
+  build whose loader has gained an unsafe base class, a `python/*` tag, or a
+  multi-constructor — the three ways a `SafeLoader` subclass can be widened without any line
+  that looks security-relevant changing.
+- **The ingestion refusal set is documented** in `docs/control-plane.md` alongside the
+  existing conversion refusals.
+
+### Security
+
+The CodeQL alert (`py/unsafe-deserialization`, reported Critical) was a **false positive**.
+Unsafe object deserialization was not possible and no code execution path existed: the loader
+inherited only from `SafeLoader` and `SafeConstructor`, registered no `python/*` constructor
+and no multi-constructor, and its one customization replaced the standard mapping tag. CodeQL
+resolves the `Loader=` argument against a list of known-safe loader classes, and a subclass
+defined in this repository is not on that list.
+
+What the investigation did find were **availability and error-handling defects**: two inputs
+under a kilobyte that produced an unhandled exception and a 500 at the system's first trust
+boundary. Those are what this release fixes.
+
+42 regression tests cover the loader's tag surface, each way the subclass could be widened,
+every structural refusal, the parser limits, and the absence of the `yaml.load` call at syntax
+level. No payload is permitted a side effect: a sentinel records any callable construction, and
+`os.system`, `os.popen` and the `subprocess` entry points are trapped to fail the test if a
+parse ever reaches them.
+
+### Migration from 0.2.0
+
+**None.** Anchors, aliases and every standard scalar type still load, and the repository's own
+example specification is asserted to parse unchanged. Three inputs that previously produced an
+HTTP 500 or a misleading message now produce the project's structured errors. Duplicate-key
+rejection is unchanged. No configuration, contract or artifact change is required.
+
 ## [0.2.0] — 2026-08-06
 
 Contract version: **1.0.0 → 1.1.0** (additive; see [Migration](#migration-from-010)).
@@ -158,6 +220,7 @@ Initial public release. OpenAPI-to-tool conversion, human review, immutable publ
 and deployment snapshots, provider adapters, a governed execution boundary, and the reference
 runtime.
 
-[Unreleased]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/its-spark-dev/toollayer-ai/releases/tag/v0.1.0

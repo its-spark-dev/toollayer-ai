@@ -37,7 +37,7 @@ def create_app(*, create_tables: bool = True) -> FastAPI:
 
     app = FastAPI(
         title="ToolLayer AI — Tool Control Plane",
-        version="0.2.0",
+        version="0.2.1",
         summary="Turns OpenAPI descriptions into governed, versioned, provider-neutral tools.",
     )
 
