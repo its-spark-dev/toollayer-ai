@@ -44,7 +44,7 @@ correction is in the implementation, the tests, and the prose together.
 - **SBOM generation** (`make sbom`) in CycloneDX for the locked Python graph, plus the console
   dependency tree.
 - **A GitHub Pages portfolio page** built from the existing captures and visual language.
-- **116 new tests** across contract, security, integration and unit suites — snapshot
+- **117 new tests** across contract, security, integration and unit suites — snapshot
   authenticity, key rotation, streaming bounds against a real HTTP server, one-snapshot
   consistency, deep immutability, caller-token verification, and malformed destinations.
 

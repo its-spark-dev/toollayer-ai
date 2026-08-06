@@ -42,6 +42,10 @@ class _Recorder:
         self.bytes_written = 0
         self.finished_normally = False
         self.lock = threading.Lock()
+        #: Released only at teardown. `/stalls` waits on it after sending a bounded prefix,
+        #: which is what turns "did the client keep reading?" into a deterministic question
+        #: instead of a race against the socket buffer.
+        self.release = threading.Event()
 
     def wrote(self, count: int) -> None:
         with self.lock:
@@ -65,6 +69,7 @@ def _handler_class(recorder: _Recorder) -> type[BaseHTTPRequestHandler]:
                 "/lying-length": self._lying_length,
                 "/oversized-length": self._oversized_length,
                 "/endless": self._endless,
+                "/stalls": self._stalls,
                 "/redirect": self._redirect,
             }
             handler = handlers.get(route)
@@ -126,16 +131,47 @@ def _handler_class(recorder: _Recorder) -> type[BaseHTTPRequestHandler]:
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
+        def _stalls(self) -> None:
+            """Send a bounded prefix past the limit, then stop sending and never close.
+
+            This is the deterministic form of the endless case. A client that stops at the
+            limit has everything it needs and returns at once. A client that drains the
+            response has nothing more to read and no EOF to end on, so it blocks until its
+            read timeout — which the test asserts does *not* happen.
+            """
+            self.send_response(200)
+            self.send_header("content-type", "application/octet-stream")
+            self.send_header("transfer-encoding", "chunked")
+            self.end_headers()
+            # Written inline rather than through `_write_chunked`, because that helper sends
+            # the terminating zero-length chunk. Sending it would give the client a clean EOF
+            # to stop on, which is precisely the signal this endpoint must withhold.
+            block = b"w" * CHUNK
+            header = f"{CHUNK:X}\r\n".encode("ascii")
+            try:
+                for _ in range((LIMIT * 4) // CHUNK):
+                    self.wfile.write(header + block + b"\r\n")
+                    self.wfile.flush()
+                    recorder.wrote(CHUNK)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                return
+            recorder.release.wait(timeout=30)
+
         def _endless(self) -> None:
             """Stream until the client goes away, or until the runaway ceiling."""
             self.send_response(200)
             self.send_header("content-type", "application/octet-stream")
             self.send_header("transfer-encoding", "chunked")
             self.end_headers()
-            self._write_chunked(RUNAWAY_CEILING)
-            recorder.finished_normally = True
+            # The return value matters: `_write_chunked` swallows the broken pipe, so calling
+            # it and then unconditionally setting the flag would record "the handler returned"
+            # rather than "the client read everything" — which is the opposite of what this
+            # flag is for.
+            if self._write_chunked(RUNAWAY_CEILING):
+                recorder.finished_normally = True
 
-        def _write_chunked(self, total: int) -> None:
+        def _write_chunked(self, total: int) -> bool:
+            """Write ``total`` bytes, returning whether the whole stream was delivered."""
             block = b"z" * CHUNK
             header = f"{CHUNK:X}\r\n".encode("ascii")
             try:
@@ -146,7 +182,8 @@ def _handler_class(recorder: _Recorder) -> type[BaseHTTPRequestHandler]:
                 self.wfile.write(b"0\r\n\r\n")
             except (BrokenPipeError, ConnectionResetError, OSError):
                 # The client closed on us. That is the behavior under test.
-                pass
+                return False
+            return True
 
         def _redirect(self) -> None:
             self.send_response(302)
@@ -181,6 +218,7 @@ def upstream() -> Iterator[tuple[str, _Recorder]]:
     try:
         yield f"http://{host}:{port}", recorder
     finally:
+        recorder.release.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
@@ -322,19 +360,40 @@ class TestTheStreamIsNotDrained:
     ) -> None:
         """The property the old stub-transport test could not observe.
 
-        ``bytes_written`` is what the upstream actually got onto the socket. A buffering
-        client would let it reach the runaway ceiling; a streaming client that closes the
-        response stops it within a small multiple of the limit — socket buffers mean the
-        server can run slightly ahead, which is why this is a generous bound rather than an
-        exact one.
+        The server sends a bounded prefix past the limit and then stops without closing. A
+        client that stopped at the limit already has what it needs and returns immediately; a
+        client that drained the response would sit waiting for bytes that never arrive and
+        fail on its read timeout.
+
+        Deliberately *not* a byte-count comparison. Counting what the server managed to write
+        races the socket buffer, and on a fast runner the server can get far ahead of the
+        client's close — which is exactly how the first version of this test failed in CI
+        while passing locally.
         """
-        base, recorder = upstream
-        _send(f"{base}/endless")
-        assert recorder.finished_normally is False
-        assert recorder.bytes_written < RUNAWAY_CEILING // 8, (
-            f"the server wrote {recorder.bytes_written} bytes; the client kept reading past "
-            f"the {LIMIT} byte limit"
-        )
+        base, _recorder = upstream
+        _status, _headers, body = _send(f"{base}/stalls", limit=LIMIT)
+        assert len(body) == LIMIT + 1
+
+    def test_draining_the_response_would_be_observable(
+        self, upstream: tuple[str, _Recorder]
+    ) -> None:
+        """The control for the test above: prove the stall is real.
+
+        With a limit high enough that the prefix never reaches it, the same endpoint makes the
+        client wait for bytes that never come, and it times out. That is what would happen to
+        every oversized response if the bound were not applied while reading.
+        """
+        base, _recorder = upstream
+        with pytest.raises(PolicyDenied) as caught:
+            HttpxTransport().send(
+                _request(f"{base}/stalls"),
+                limits=ExecutionLimits(
+                    connect_timeout_seconds=3.0,
+                    read_timeout_seconds=2.0,
+                    max_response_bytes=LIMIT * 8,
+                ),
+            )
+        assert caught.value.code == ErrorCode.UPSTREAM_TIMEOUT
 
 
 class TestOtherTransportGuarantees:

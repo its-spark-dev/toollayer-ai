@@ -75,9 +75,12 @@ jobs:
       # repointed at new code by whoever owns the repository, and this job runs in our CI.
       # First-party actions/* keep major tags — the same argument applies less forcefully, and
       # Dependabot proposes updates for both.
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          version: "0.5.29"
+          # Pinned to the uv that generated uv.lock. The lockfile carries a format revision,
+          # and an older uv does not understand a newer one — it decides the lockfile "needs to
+          # be updated" and this job fails on a file that is in fact current.
+          version: "0.9.27"
 
       - name: uv.lock matches pyproject.toml, and requirements.lock matches uv.lock
         # Two lockfiles exist because they serve different consumers: uv.lock is the

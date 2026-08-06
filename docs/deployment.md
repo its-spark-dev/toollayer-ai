@@ -218,7 +218,7 @@ Being precise about this matters more than sounding finished.
 | Path | Status |
 |---|---|
 | `make setup` on a clean clone | **Verified** — Python 3.11 and 3.12 |
-| `make test` (296 Python tests) | **Verified** — clean clone and CI |
+| `make test` (297 Python tests) | **Verified** — clean clone and CI |
 | `make lint`, `make typecheck` | **Verified** — Ruff check, Ruff format, strict mypy |
 | `make demo` (three services, full flow) | **Verified** — default and overridden ports |
 | `make capture` (Playwright asset capture) | **Verified** |
