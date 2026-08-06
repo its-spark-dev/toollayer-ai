@@ -15,7 +15,7 @@ keywords = ["openapi", "llm", "tool-calling", "control-plane", "json-schema"]
 
 dependencies = [
     "fastapi>=0.111",
-    "uvicorn[standard]>=0.30",
+    "uvicorn[standard]>=0.52.1",
     "pydantic>=2.7",
     "jsonschema>=4.21",
     # jsonschema's FormatChecker silently skips `date-time` unless this is installed, so
