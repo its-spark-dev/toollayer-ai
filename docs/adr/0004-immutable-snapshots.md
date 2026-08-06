@@ -20,7 +20,9 @@ its digest still verifies after disablement. Versions must strictly increase.
 A **deployment snapshot** pins exactly one published version per connector and is never edited.
 A change creates revision N+1 and deactivates N; N stays queryable and byte-identical.
 
-Both carry a SHA-256 over their canonical serialization, and consumers recompute it.
+Both carry a SHA-256 over their canonical serialization, and consumers recompute it. Deployment
+snapshots additionally carry an Ed25519 producer signature over the canonical bytes that include
+that digest.
 Serialization is pinned — sorted keys, no insignificant whitespace, no non-finite numbers — so
 two processes serializing the same logical document produce the same bytes.
 
@@ -29,7 +31,9 @@ Uniqueness is enforced by **database constraint**, not application check.
 ## Consequences
 
 **Good.** "What was it running?" has an exact answer: a revision, an identifier, a digest.
-Integrity is verifiable by the consumer rather than asserted by the producer. A runtime
+Content integrity is checkable by the consumer. Producer authenticity is a separate claim and
+needs the signature: a digest is asserted by whoever wrote the document, and an attacker who can
+rewrite the document can rewrite the digest with it. A runtime
 mid-request cannot have its tools change underneath it. Rollback is publishing an earlier
 snapshot's selections, not an `UPDATE`.
 

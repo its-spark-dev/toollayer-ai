@@ -1,19 +1,30 @@
 """Fetching, verifying, and holding a deployment snapshot.
 
-The runtime holds an immutable snapshot in memory and refreshes it on a schedule. Three
+The runtime holds an immutable snapshot in memory and refreshes it on a schedule. Four
 properties make that safe rather than merely fast.
 
-**It is verified, not trusted.** Every fetch is validated against the contract schema and its
-digest is recomputed. A snapshot that does not hash to the digest it carries is rejected and
-the previously held snapshot stays in service — a corrupted or tampered payload degrades the
-runtime to "slightly stale", never to "serving whatever arrived".
+**Its content is checked.** Every fetch is validated against the contract schema and its
+SHA-256 digest is recomputed. That catches corruption in transit or storage, and a payload
+edited without its digest being updated. It does not catch an attacker who rewrites both,
+because computing SHA-256 requires no secret.
+
+**Its producer is authenticated.** In the default ``required`` verification mode the snapshot
+must also carry an Ed25519 signature made by a key this runtime was configured to trust. That
+is the control that holds against an active attacker: substituting the payload *and* its
+digest still leaves a signature that will not verify. Unsigned operation exists for the
+offline demonstration, must be asked for explicitly, and is reported by ``/healthz``.
 
 **It is replaced, never mutated.** A refresh builds a new object and swaps the reference under
-a lock. A request that started with revision 4 finishes with revision 4, so a tool cannot
-change definition halfway through the call that is executing it.
+a lock. The tool index is a read-only mapping, so a caller holding a reference cannot alter
+what a later request will see. A request that started with revision 4 finishes with revision
+4, so a tool cannot change definition halfway through the call that is executing it.
 
 **Its freshness is checked, not assumed.** Refresh uses ``If-None-Match``, so the common case
 costs one ``304`` and the runtime learns that nothing changed rather than guessing.
+
+None of this replaces transport security. TLS authenticates the *service* and protects
+confidentiality on the wire; the signature authenticates the *artifact* and keeps holding
+after it has been cached, mirrored, or relayed. A real deployment needs both.
 """
 
 from __future__ import annotations
@@ -21,12 +32,15 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Literal
 
 import httpx
 
 from toollayer_contracts import (
+    SNAPSHOT_DIGEST_EXCLUDED,
     ConnectorDefinition,
     DeploymentSnapshot,
     ToolDefinition,
@@ -34,14 +48,30 @@ from toollayer_contracts import (
     verify_digest,
 )
 from toollayer_contracts.errors import ErrorCode, NotFoundError, ToolLayerError
+from toollayer_contracts.signing import (
+    EMPTY_KEY_RING,
+    SignatureVerificationError,
+    TrustedKeyRing,
+    verify_document,
+)
 from toollayer_contracts.version import IncompatibleContractVersionError, require_supported
 
-__all__ = ["BoundTool", "LoadedSnapshot", "SnapshotClient", "SnapshotStore"]
+__all__ = [
+    "BoundTool",
+    "LoadedSnapshot",
+    "SnapshotClient",
+    "SnapshotStore",
+    "SnapshotVerification",
+    "VerificationMode",
+    "load_snapshot_document",
+]
 
 logger = logging.getLogger("toollayer.runtime.snapshot")
 
-#: Fields excluded from the digest, because the digest is embedded in the document itself.
-_DIGEST_EXCLUDED = ("snapshot_id", "snapshot_digest")
+#: ``required`` authenticates the producer and is the default. ``disabled`` accepts an
+#: unsigned snapshot and exists for the offline demonstration; it has to be asked for by name,
+#: and a runtime in that mode says so in its health output.
+VerificationMode = Literal["required", "disabled"]
 
 
 class SnapshotError(ToolLayerError):
@@ -50,6 +80,56 @@ class SnapshotError(ToolLayerError):
 
 class SnapshotIntegrityError(ToolLayerError):
     code = ErrorCode.SNAPSHOT_INTEGRITY_FAILED
+
+
+class SnapshotSignatureError(ToolLayerError):
+    """The content was intact but the producer could not be authenticated."""
+
+    code = ErrorCode.SNAPSHOT_SIGNATURE_INVALID
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotVerification:
+    """How this runtime decides whether a snapshot's producer is acceptable.
+
+    There is no permissive fallback. ``required`` with an empty key ring is a
+    misconfiguration that fails every load rather than quietly degrading to ``disabled`` —
+    a fallback that turns itself off when it is hardest to configure is not a control.
+    """
+
+    mode: VerificationMode = "required"
+    trusted_keys: TrustedKeyRing = EMPTY_KEY_RING
+
+    @property
+    def enforced(self) -> bool:
+        return self.mode == "required"
+
+    def check(self, document: dict[str, Any]) -> str | None:
+        """Authenticate the producer, returning the key id that signed, or ``None``.
+
+        ``None`` is returned only in ``disabled`` mode, and only after recording that an
+        unauthenticated artifact was accepted.
+        """
+        if not self.enforced:
+            if document.get("signature") is not None:
+                # Still verified when a signature happens to be present and the key is
+                # known: being lenient about *absence* is not a reason to ignore a signature
+                # that is there and wrong.
+                try:
+                    return verify_document(document, self.trusted_keys)
+                except SignatureVerificationError as error:
+                    raise SnapshotSignatureError(str(error)) from None
+            logger.warning(
+                "accepting an unsigned deployment snapshot: signature verification is "
+                "disabled for this runtime"
+            )
+            return None
+        try:
+            return verify_document(document, self.trusted_keys)
+        except SignatureVerificationError as error:
+            # The message names the failure and, at most, a key id. It never contains the
+            # signature bytes or any part of the payload.
+            raise SnapshotSignatureError(str(error)) from None
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,12 +157,22 @@ class BoundTool:
 
 @dataclass(frozen=True, slots=True)
 class LoadedSnapshot:
-    """An immutable, verified snapshot indexed for dispatch."""
+    """An immutable, verified snapshot indexed for dispatch.
+
+    Immutability here is deep, not just frozen at the top level. ``tools_by_name`` is a
+    read-only mapping, and the contract models it holds are themselves frozen — so a caller
+    that keeps a reference to a snapshot, or to its index, cannot change what any other
+    request sees through it. A frozen dataclass wrapping a plain ``dict`` would have given
+    the appearance of that guarantee without the substance.
+    """
 
     snapshot: DeploymentSnapshot
     etag: str | None
     loaded_at: float
-    tools_by_name: dict[str, BoundTool]
+    tools_by_name: Mapping[str, BoundTool]
+    #: The key that authenticated this snapshot's producer, or ``None`` when it was accepted
+    #: unsigned in an explicitly configured demonstration mode.
+    signing_key_id: str | None = None
 
     @property
     def revision(self) -> int:
@@ -95,6 +185,10 @@ class LoadedSnapshot:
     @property
     def digest(self) -> str:
         return self.snapshot.snapshot_digest
+
+    @property
+    def signed(self) -> bool:
+        return self.signing_key_id is not None
 
     @property
     def tools(self) -> tuple[BoundTool, ...]:
@@ -117,8 +211,8 @@ class LoadedSnapshot:
         return bound
 
 
-def _index(snapshot: DeploymentSnapshot) -> dict[str, BoundTool]:
-    """Build the dispatch index, refusing a snapshot with an ambiguous tool name.
+def _index(snapshot: DeploymentSnapshot) -> Mapping[str, BoundTool]:
+    """Build the read-only dispatch index, refusing an ambiguous tool name.
 
     Refusing is deliberate. Silently keeping one of two same-named tools would make dispatch
     depend on connector ordering, and a caller asking for ``list_tickets`` would reach a
@@ -137,11 +231,22 @@ def _index(snapshot: DeploymentSnapshot) -> dict[str, BoundTool]:
                 base_url=connector.runtime.base_url,
                 tool=tool,
             )
-    return index
+    return MappingProxyType(index)
 
 
-def load_snapshot_document(document: Any, *, etag: str | None = None) -> LoadedSnapshot:
-    """Validate, verify, and index a snapshot document."""
+def load_snapshot_document(
+    document: Any,
+    *,
+    etag: str | None = None,
+    verification: SnapshotVerification | None = None,
+) -> LoadedSnapshot:
+    """Validate, verify, authenticate, and index a snapshot document.
+
+    The order is deliberate: shape, then contract version, then schema, then content digest,
+    then producer signature. Each step is cheaper than the next and each one narrows what the
+    following step has to reason about, so a malformed payload never reaches the
+    cryptographic layer.
+    """
     if not isinstance(document, dict):
         raise SnapshotIntegrityError("the snapshot payload is not a JSON object")
 
@@ -155,10 +260,12 @@ def load_snapshot_document(document: Any, *, etag: str | None = None) -> LoadedS
     validate_deployment_snapshot(document)
 
     declared = str(document["snapshot_digest"])
-    if not verify_digest(document, declared, exclude=_DIGEST_EXCLUDED):
-        # The digest is recomputed rather than taken on faith. This is what makes the
-        # snapshot self-verifying: transport integrity is not the same as artifact integrity.
+    if not verify_digest(document, declared, exclude=SNAPSHOT_DIGEST_EXCLUDED):
+        # The digest is recomputed rather than taken on faith. This proves the bytes are the
+        # ones the digest was taken over — not who produced them; that is the next step.
         raise SnapshotIntegrityError("the snapshot content does not match the digest it declares")
+
+    signing_key_id = (verification or SnapshotVerification()).check(document)
 
     snapshot = DeploymentSnapshot.model_validate(document)
     for connector in snapshot.connectors:
@@ -169,6 +276,7 @@ def load_snapshot_document(document: Any, *, etag: str | None = None) -> LoadedS
         etag=etag,
         loaded_at=time.monotonic(),
         tools_by_name=_index(snapshot),
+        signing_key_id=signing_key_id,
     )
 
 
@@ -182,11 +290,17 @@ class SnapshotClient:
         service_token: str,
         timeout_seconds: float = 10.0,
         client: httpx.Client | None = None,
+        verification: SnapshotVerification | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._service_token = service_token
         self._timeout = timeout_seconds
         self._client = client
+        self._verification = verification or SnapshotVerification()
+
+    @property
+    def verification(self) -> SnapshotVerification:
+        return self._verification
 
     def fetch(
         self, deployment_key: str, *, if_none_match: str | None = None
@@ -220,7 +334,11 @@ class SnapshotClient:
         if response.status_code >= 400:
             raise SnapshotError("the control plane rejected the snapshot request")
 
-        return load_snapshot_document(response.json(), etag=response.headers.get("etag"))
+        return load_snapshot_document(
+            response.json(),
+            etag=response.headers.get("etag"),
+            verification=self._verification,
+        )
 
 
 class SnapshotStore:
@@ -251,7 +369,13 @@ class SnapshotStore:
         return self._current is not None
 
     def ensure_fresh(self) -> LoadedSnapshot:
-        """Refresh if the held snapshot is older than the refresh interval."""
+        """Refresh if the held snapshot is older than the refresh interval.
+
+        Call this **once** per logical request and pass the result down. Calling it again
+        mid-request can hand a later step a different revision from the one an earlier step
+        reasoned about, which is how a request ends up authorizing against one policy and
+        executing against another.
+        """
         snapshot = self._current
         if snapshot is not None and (time.monotonic() - snapshot.loaded_at) < self._refresh_seconds:
             return snapshot
@@ -272,7 +396,8 @@ class SnapshotStore:
                 # A refresh failure is not a serving failure. The held snapshot is immutable
                 # and was verified when it was loaded, so continuing to serve it is strictly
                 # better than refusing every request because the control plane is briefly
-                # unavailable.
+                # unavailable. This covers a rejected signature too: a snapshot that fails
+                # authentication never replaces one that passed it.
                 logger.warning(
                     "snapshot refresh failed; continuing to serve revision %s",
                     existing.revision,
@@ -286,14 +411,16 @@ class SnapshotStore:
                     etag=existing.etag,
                     loaded_at=time.monotonic(),
                     tools_by_name=existing.tools_by_name,
+                    signing_key_id=existing.signing_key_id,
                 )
                 self._current = refreshed
                 return refreshed
 
             logger.info(
-                "loaded snapshot revision %s with %s tool(s)",
+                "loaded snapshot revision %s with %s tool(s), signed by %s",
                 fetched.revision,
                 len(fetched.tools_by_name),
+                fetched.signing_key_id or "nobody (unsigned)",
             )
             self._current = fetched
             return fetched

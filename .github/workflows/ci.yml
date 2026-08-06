@@ -6,6 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege at the workflow level. Jobs that need more say so themselves; nothing here
+# currently does, and a job that starts needing write access should have to ask for it.
 permissions:
   contents: read
 
@@ -30,13 +32,24 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install
+      - name: Install from the lockfile
+        # Hash-pinned, so this leg runs against the exact dependency graph the lockfile
+        # describes rather than whatever the version ranges resolve to today. A dependency
+        # whose contents changed under a fixed version number fails here rather than
+        # producing a green run against something nobody reviewed.
         run: |
           python -m pip install --upgrade pip
+          python -m pip install --require-hashes --no-deps -r requirements.lock
+          python -m pip install --no-deps -e .
           python -m pip install -e ".[dev]"
 
       - name: Lint
         run: ruff check .
+
+      - name: Formatting
+        # `make lint` has always run both; CI ran only the first, so formatting could drift
+        # on main without anything noticing.
+        run: ruff format --check .
 
       - name: Typecheck
         run: mypy packages apps
@@ -51,6 +64,29 @@ jobs:
         # Called out as its own step so a failure here is visibly a *security* regression in
         # the run summary, not one line inside a long test log.
         run: pytest tests/security tests/contract -v
+
+  lockfiles:
+    name: Lockfiles are current
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      # Third-party actions are pinned to a commit SHA rather than a moving tag: a tag can be
+      # repointed at new code by whoever owns the repository, and this job runs in our CI.
+      # First-party actions/* keep major tags — the same argument applies less forcefully, and
+      # Dependabot proposes updates for both.
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          # Pinned to the uv that generated uv.lock. The lockfile carries a format revision,
+          # and an older uv does not understand a newer one — it decides the lockfile "needs to
+          # be updated" and this job fails on a file that is in fact current.
+          version: "0.9.27"
+
+      - name: uv.lock matches pyproject.toml, and requirements.lock matches uv.lock
+        # Two lockfiles exist because they serve different consumers: uv.lock is the
+        # universal resolution, requirements.lock is what pip and Docker can install with
+        # hashes. This job is what stops them from drifting apart.
+        run: make check-lock
 
   console:
     name: Build the console
@@ -79,6 +115,218 @@ jobs:
         # a normal test run. Parsing them needs a JavaScript runtime, so the check lives here.
         run: npm run check:diagrams
 
+      - name: No signing key or credential is in the built bundle
+        # The bundle is served to every browser that opens the console. Anything
+        # secret-shaped in it is public.
+        run: |
+          if grep -rEq 'TOOLLAYER_SNAPSHOT_SIGNING_KEY|BEGIN [A-Z ]*PRIVATE KEY' dist/; then
+            echo "::error::the console bundle contains signing material"
+            exit 1
+          fi
+          echo "no signing material in the console bundle"
+
+  package:
+    name: Build and install the distribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the wheel and the source distribution
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Install the built wheel into a clean environment
+        # A clean venv, and the wheel rather than the source tree. The editable install used
+        # everywhere else takes a different code path, which is exactly how a broken
+        # packaging configuration stayed invisible until someone ran `pip install .`.
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/python -m pip install --upgrade pip
+          /tmp/wheel-env/bin/python -m pip install dist/*.whl
+
+      - name: Import every packaged module
+        # A throwaway public key rather than TOOLLAYER_SNAPSHOT_VERIFICATION=disabled, so the
+        # smoke test exercises the default configuration. The runtime refuses to build
+        # settings without a trusted key — that refusal is the control, and switching it off
+        # to make an import work would be testing a path nobody should run.
+        run: |
+          export TOOLLAYER_SNAPSHOT_TRUSTED_KEYS="$(/tmp/wheel-env/bin/python -c "
+          from toollayer_contracts.signing import generate_signing_key
+          key = generate_signing_key('ci-smoke-key')
+          print(f'{key.key_id}:{key.encoded_public_key()}')")"
+          /tmp/wheel-env/bin/python - <<'PY'
+          import importlib
+
+          modules = [
+              "toollayer_contracts",
+              "toollayer_contracts.canonical_json",
+              "toollayer_contracts.signing",
+              "toollayer_contracts.validation",
+              "toollayer_contracts.adapters.openai_adapter",
+              "toollayer_contracts.adapters.anthropic_adapter",
+              "toollayer_openapi",
+              "toollayer_policy",
+              "toollayer_policy.executor",
+              "toollayer_mock_llm",
+              "control_plane.main",
+              "runtime_service.main",
+              "runtime_service.identity",
+              "runtime_service.snapshot",
+              "demo_api.main",
+          ]
+          for name in modules:
+              importlib.import_module(name)
+          print(f"imported {len(modules)} packaged modules")
+          PY
+
+      - name: Every packaged JSON Schema loads
+        # The schemas are data files inside the package. A packaging change that dropped them
+        # would leave every import working and every validation failing at runtime.
+        run: |
+          /tmp/wheel-env/bin/python - <<'PY'
+          from toollayer_contracts import load_schema, schema_names
+
+          names = schema_names()
+          for name in names:
+              schema = load_schema(name)
+              assert "$id" in schema, name
+          print(f"loaded {len(names)} packaged schemas")
+          PY
+
+      - name: The installed entry point runs
+        run: |
+          export TOOLLAYER_SNAPSHOT_TRUSTED_KEYS="$(/tmp/wheel-env/bin/python -c "
+          from toollayer_contracts.signing import generate_signing_key
+          key = generate_signing_key('ci-smoke-key')
+          print(f'{key.key_id}:{key.encoded_public_key()}')")"
+          /tmp/wheel-env/bin/toollayer-runtime --help
+
+      - name: Package metadata and license
+        run: |
+          python -m pip install --upgrade twine
+          # Named explicitly rather than globbed: `make sbom` writes into dist/sbom/, and
+          # twine rejects a directory as an unknown distribution format.
+          python -m twine check dist/*.whl dist/*.tar.gz
+          /tmp/wheel-env/bin/python - <<'PY'
+          from importlib.metadata import metadata
+
+          info = metadata("toollayer-ai")
+          assert info["Name"] == "toollayer-ai", info["Name"]
+          license_field = info.get("License-Expression") or info.get("License") or ""
+          assert "MIT" in license_field, f"unexpected license: {license_field!r}"
+          print(f"{info['Name']} {info['Version']} — {license_field}")
+          PY
+
+      - name: Upload the distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: distribution
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          retention-days: 7
+
+  docker:
+    name: Docker topology, executed
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the demo driver
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes --no-deps -r requirements.lock
+          python -m pip install --no-deps -e .
+
+      - name: The Compose file is valid
+        run: docker compose config >/dev/null
+
+      - name: Build every image
+        run: docker compose build
+
+      - name: Bring the topology up and run the full demonstration
+        # This is the step that turns "provided and statically reviewed" into "executed".
+        # run_demo_docker.sh generates an ephemeral signing key, waits on the healthchecks,
+        # asserts the runtime is requiring and verifying signatures, and runs the same
+        # assertion harness the local demo runs.
+        #
+        # KEEP_UP leaves the stack running for the assertions below. They must not start it
+        # themselves: the signing key lives only in the demo script's environment, so a fresh
+        # `docker compose up` here would give the runtime an empty trusted key ring and it
+        # would — correctly — refuse to start.
+        run: KEEP_UP=1 make demo-docker
+
+      - name: The Python services run as a non-root user
+        run: |
+          for service in control-plane runtime demo-api; do
+            uid="$(docker compose exec -T "$service" id -u | tr -d '\r')"
+            if [ "$uid" = "0" ]; then
+              echo "::error::$service runs as root"
+              exit 1
+            fi
+            echo "$service runs as uid $uid"
+          done
+          console_uid="$(docker compose exec -T console id -u | tr -d '\r')"
+          if [ "$console_uid" = "0" ]; then
+            echo "::error::console runs as root"
+            exit 1
+          fi
+          echo "console runs as uid $console_uid"
+
+      - name: No signing key is baked into any image
+        # The compose file passes signing material through the environment. If it ever leaked
+        # into a layer, the image would carry a private key wherever it was pushed.
+        run: |
+          for image in toollayer-ai:local toollayer-console:local; do
+            if docker history --no-trunc "$image" | grep -Eq 'TOOLLAYER_SNAPSHOT_SIGNING_KEY=[A-Za-z0-9_-]'; then
+              echo "::error::$image has a signing key in its build history"
+              exit 1
+            fi
+            if docker run --rm --entrypoint sh "$image" -c \
+                'grep -rEl "BEGIN [A-Z ]*PRIVATE KEY" /app /usr/share/nginx/html 2>/dev/null | head -1' \
+                | grep -q .; then
+              echo "::error::$image contains private key material"
+              exit 1
+            fi
+            echo "$image carries no signing material"
+          done
+
+      - name: The published ports answer
+        run: |
+          for port in 8080 8081 8082 5173; do
+            curl --silent --fail --max-time 10 "http://localhost:${port}/healthz" >/dev/null \
+              || curl --silent --fail --max-time 10 "http://localhost:${port}/" >/dev/null \
+              || { echo "::error::port ${port} did not answer"; exit 1; }
+            echo "port ${port} answers"
+          done
+
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 500 > docker-compose.log || true
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-logs
+          path: docker-compose.log
+          retention-days: 7
+
+      - name: Tear the topology down
+        # `always()` so a failed assertion above still cleans up the volumes; a leftover
+        # SQLite volume would make the next run start from the previous run's state.
+        if: always()
+        run: docker compose down -v --remove-orphans || true
+
   demo:
     name: End-to-end demo
     runs-on: ubuntu-latest
@@ -92,13 +340,16 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install
+      - name: Install from the lockfile
         run: |
           python -m pip install --upgrade pip
+          python -m pip install --require-hashes --no-deps -r requirements.lock
+          python -m pip install --no-deps -e .
           python -m pip install -e ".[dev]"
 
       - name: Run the demonstration against real services
-        # The demo script exits non-zero if any control fails to reject, so this is a real
+        # The demo script exits non-zero if any control fails to reject, and it checks the
+        # specific error code rather than only that the status was >= 400, so this is a real
         # assertion about the running system rather than a screenshot generator.
         run: ./scripts/run_demo.sh
 
@@ -109,6 +360,78 @@ jobs:
           name: demo-logs
           path: .demo-logs/
           retention-days: 7
+
+  supply-chain:
+    name: Dependency and secret scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/control-plane/frontend/package-lock.json
+
+      - name: Python dependencies have no known vulnerabilities
+        # Scans the lockfile rather than the installed environment, so it reports on what a
+        # clean install produces. Any finding fails the job: the policy is to upgrade, and
+        # an accepted exception has to be written down in docs/deployment.md and added here
+        # explicitly rather than being waved through by a permissive threshold.
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip-audit --requirement requirements.lock --disable-pip
+
+      - name: Console dependencies have no high or critical vulnerabilities
+        # `high` rather than `low` because the console's dependency tree is build-and-test
+        # tooling that never ships to a user. Moderate findings in a bundler are worth
+        # tracking; failing the build on one would train everyone to ignore this job.
+        working-directory: apps/control-plane/frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
+      - name: Every dependency license is permissive
+        run: |
+          python -m pip install --upgrade pip pip-licenses
+          python -m pip install --require-hashes --no-deps -r requirements.lock
+          pip-licenses --format=markdown --with-urls --output-file=licenses.md
+          # Copyleft licenses would change what someone may do with this repository, so an
+          # accidental one is a licensing problem rather than a style preference.
+          if pip-licenses --format=csv | grep -Ei ',"?(GPL|AGPL|LGPL|SSPL|BUSL)'; then
+            echo "::error::a dependency carries a copyleft or source-available license"
+            exit 1
+          fi
+          echo "every dependency license is permissive"
+
+      - name: Generate the software bill of materials
+        run: ./scripts/generate_sbom.sh
+
+      - name: Upload the SBOM and license inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            dist/sbom/
+            licenses.md
+          retention-days: 30
+
+      - name: Scan the full history for secrets
+        # gitleaks over the whole history, not just the diff. A credential removed in a later
+        # commit is still published, and the working-tree-only check this replaced could not
+        # see that.
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_SUMMARY: "true"
 
   hygiene:
     name: Repository hygiene
@@ -136,6 +459,21 @@ jobs:
             exit 1
           fi
           echo "no attribution trailers found"
+
+      - name: No private key material anywhere in the tree
+        # Signing was added to this repository; the corresponding risk is that a development
+        # key gets committed "just for the demo". Nothing generates a key file, and this is
+        # what keeps it that way.
+        run: |
+          if git ls-files -z | xargs -0 grep -lE 'BEGIN [A-Z ]*PRIVATE KEY' 2>/dev/null | grep -q .; then
+            echo "::error::a private key is committed"
+            exit 1
+          fi
+          if git ls-files | grep -Ei '\.(pem|key|p12|pfx|jks)$' | grep -q .; then
+            echo "::error::a key-shaped file is committed"
+            exit 1
+          fi
+          echo "no private key material in the tree"
 
       - name: The example environment file must contain no real-looking secret
         run: |

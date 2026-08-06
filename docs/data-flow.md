@@ -129,7 +129,7 @@ sequenceDiagram
         CP-->>RT: 200 + document + ETag
         RT->>RT: check contract_version
         RT->>RT: validate against the schema
-        RT->>RT: recompute the digest and compare
+        RT->>RT: recompute the digest, then verify the signature
         alt mismatch
             RT->>RT: refuse, keep serving the previous snapshot
         else verified

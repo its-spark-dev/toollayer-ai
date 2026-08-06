@@ -1,15 +1,21 @@
 """The orchestration sequence.
 
-One request, one fixed order, and every step able to refuse:
+One request, one snapshot, one fixed order, and every step able to refuse:
 
-1. **Refresh** the snapshot if it is stale, and verify whatever comes back.
-2. **Discover** the tools this caller is authorized to see.
+1. **Refresh** the snapshot if it is stale, and verify whatever comes back. This happens
+   exactly once per request; every later step is handed the result.
+2. **Discover** the tools this caller is authorized to see, in that snapshot.
 3. **Select** one of them, or stop.
 4. **Generate** arguments, or stop and say what is missing.
 5. **Validate** the arguments against the published JSON Schema.
 6. **Authorize** the caller against the selected tool's policy.
 7. **Execute** through the governed HTTP boundary.
 8. **Format** a response from the result.
+
+**One request uses one immutable revision.** The snapshot is acquired at step 1 and threaded
+through every subsequent step. Re-reading it partway through would let a refresh land between
+discovery and execution, so a turn could authorize against one revision's policy and execute
+against another's — a window in which neither revision was ever checked as a whole.
 
 Two orderings in that list are load-bearing.
 
@@ -30,7 +36,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from runtime_service.snapshot import BoundTool, SnapshotStore
+from runtime_service.snapshot import BoundTool, LoadedSnapshot, SnapshotStore
 from toollayer_contracts.errors import (
     AuthorizationError,
     ErrorCode,
@@ -107,13 +113,31 @@ class Orchestrator:
     # ------------------------------------------------------------------ discovery
 
     def discover(self, caller: CallerIdentity | None) -> tuple[BoundTool, ...]:
-        """Return the tools ``caller`` is authorized to see.
+        """Return the tools ``caller`` is authorized to see, against a freshly held snapshot.
+
+        This is the entry point for the standalone discovery endpoint, which owns its whole
+        request and may therefore acquire its own snapshot. Code that is already inside an
+        orchestrated turn must call :meth:`discover_in` with the snapshot that turn started
+        with instead.
+        """
+        return self.discover_in(self._store.ensure_fresh(), caller)
+
+    @staticmethod
+    def discover_in(
+        snapshot: LoadedSnapshot, caller: CallerIdentity | None
+    ) -> tuple[BoundTool, ...]:
+        """Return the tools ``caller`` may see *in this exact snapshot*.
+
+        Takes the snapshot rather than fetching one so that a single request reasons about a
+        single revision throughout. A second ``ensure_fresh()`` partway through a turn could
+        hand selection a different revision from the one authorization and execution then
+        used — the request would discover tools from revision 4 and execute against revision
+        5, with a policy nobody had checked in combination.
 
         Uses the same authorization function as execution. That is the entire reason the
         function lives in the shared policy package: if discovery had its own copy, the two
         would eventually disagree about who may use what.
         """
-        snapshot = self._store.ensure_fresh()
         visible: list[BoundTool] = []
         for bound in snapshot.tools:
             decision = authorize_stored_policy(bound.tool.policy.model_dump(mode="json"), caller)
@@ -221,7 +245,10 @@ class Orchestrator:
             digest=snapshot.digest,
         )
 
-        available = self.discover(caller)
+        # The snapshot acquired above, not a freshly fetched one. Everything from here to the
+        # response — discovery, selection, resolution, authorization, execution, and the
+        # revision reported back — refers to this one immutable revision.
+        available = self.discover_in(snapshot, caller)
         trace = trace.with_step(
             "tools_discovered",
             visible=[bound.tool_name for bound in available],

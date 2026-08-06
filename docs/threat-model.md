@@ -60,7 +60,7 @@ data and never as instructions.
 | Compromised AI client | Arbitrary calls with arbitrary asserted roles | Privilege escalation |
 | Hostile upstream API | Controls response bodies | Make the runtime act on its content |
 | Malicious specification author | Controls an uploaded OpenAPI document | SSRF at ingestion; a tool that misbehaves |
-| Network attacker | Sees or modifies traffic between services | Substitute a snapshot |
+| Network attacker | Sees or modifies traffic between services | Substitute a snapshot, or read one in transit |
 | Curious insider | Read access to logs | Harvest credentials |
 
 ## 5. Misuse cases and mitigations
@@ -147,9 +147,13 @@ mixed public/link-local answers, and suffix-matching attempts.
 ### 5.9 Response-based denial of service
 
 **Mitigation.** Finite connect timeout, read timeout, and response byte cap, all validated at
-construction so an unbounded value cannot be configured. Redirects are disabled at the client
-rather than handled after the fact.
-**Tests.** `test_an_oversized_response_is_refused_rather_than_buffered`,
+construction so an unbounded value cannot be configured. The byte cap is enforced *while the
+body is being read*: the response is consumed as a stream in bounded chunks and the connection
+is closed the moment the running total passes the limit, so the cap bounds memory rather than
+only the returned value. `Content-Length` is an early-exit hint, never the control — a missing
+or understated one changes nothing. Redirects are disabled at the client rather than handled
+after the fact.
+**Tests.** `test_the_client_stops_consuming_after_the_limit_is_crossed`,
 `test_a_timeout_is_reported_as_a_timeout`, `test_a_redirect_is_a_failure_rather_than_a_hop`.
 
 ### 5.10 Publishing a definition nobody reviewed
@@ -161,10 +165,37 @@ arbitrary content.
 
 ### 5.11 Substituting a snapshot in transit
 
-**Mitigation.** The snapshot embeds a digest over its own canonical serialization, and the
-consumer recomputes it. Transport integrity is not artifact integrity. A tampered snapshot is
-refused and the previously verified one stays in service.
-**Tests.** `test_the_runtime_refuses_a_snapshot_whose_content_was_altered`.
+Two controls apply here, and they answer different questions. Stating only the first is what
+this document used to do, and it overstated the protection.
+
+**Content integrity — what the digest gives.** The snapshot embeds a SHA-256 digest over its
+own canonical serialization, and the consumer recomputes it. That catches corruption in transit
+or storage, and a payload edited without its digest being updated. It does **not** stop an
+attacker who can rewrite the response body: computing SHA-256 requires no secret, so the same
+attacker recomputes the digest and the document stays internally consistent.
+
+**Producer authenticity — what the signature gives.** The snapshot also carries an Ed25519
+signature over the canonical bytes of the whole document with the signature field removed,
+which therefore covers `snapshot_id` and `snapshot_digest` as well as every connector. The
+Control Plane signs with a private key held only in its own configuration; the runtime verifies
+against a public key it was configured with out of band. Forging that requires the private key,
+so the substitution attack above fails at this step. This is the control that holds against an
+active network attacker, and it holds only as far as the runtime's trusted-key configuration is
+intact — an attacker who can rewrite `TOOLLAYER_SNAPSHOT_TRUSTED_KEYS` has already won.
+
+**Neither is transport security.** TLS protects confidentiality on the wire and authenticates
+the *service*. The signature authenticates the *artifact*, and keeps holding after it has been
+cached, mirrored, or relayed. A real deployment needs both; this compose topology has neither
+TLS nor mTLS, which §7 states plainly.
+
+A snapshot that fails either check is refused and the previously verified one stays in service.
+Verification is required by default; unsigned operation must be named explicitly and is
+reported by `/healthz`.
+
+**Tests.** `test_content_changed_but_the_original_digest_kept_is_refused` (the digest case),
+`test_content_and_digest_both_replaced_is_still_refused` (the case a digest alone cannot
+catch), `test_a_valid_signature_from_an_untrusted_key_is_refused`,
+`test_required_mode_with_no_trusted_key_refuses_everything`, `TestKeyRotation`.
 
 ### 5.12 Credential leakage through errors and logs
 
@@ -192,12 +223,15 @@ publish.
 | Closed input schemas | `toollayer_openapi.converter` | Always on |
 | Server-authoritative publication | `control_plane.publication` | Always on |
 | Immutable versions and snapshots | Database constraints | Always on |
-| Digest verification | `toollayer_contracts.canonical_json` | Always on |
+| Content digest verification | `toollayer_contracts.canonical_json` | Always on |
+| Producer signature verification | `toollayer_contracts.signing` | **Required unless disabled by name** |
 | One authorization function | `toollayer_policy.authorization` | Always on |
 | Destination allowlist | `toollayer_policy.destinations` | **Empty = deny all** |
 | Post-resolution address checks | `toollayer_policy.destinations` | Always on |
 | No redirects, no proxies, no retries | `toollayer_policy.executor` | Always on |
-| Finite timeouts and response cap | `toollayer_policy.executor` | Always on |
+| Finite timeouts and a streaming response cap | `toollayer_policy.executor` | Always on |
+| One immutable snapshot revision per request | `runtime_service.orchestrator` | Always on |
+| Verified caller identity | `runtime_service.identity` | **Off in the demo; reported by `/healthz`** |
 | Untrusted-content marking | `runtime_service.orchestrator` | Always on |
 | Separate admin and service credentials | `control_plane.dependencies` | Enforced at startup |
 
@@ -208,10 +242,18 @@ These are real, and they are stated rather than papered over.
 **Static bearer tokens are not an identity system.** No rotation, no expiry, no per-actor
 attribution beyond a string. Sufficient to demonstrate two audiences with two credentials.
 
-**The runtime does not authenticate anyone.** It enforces the roles the AI application
-asserts. A compromised client can assert any role. In a real deployment the runtime would sit
-behind a gateway that verifies a signed identity; that is out of scope here and is not implied
-to exist.
+**Caller identity is asserted rather than verified in the default topology.** In
+`asserted_header` mode — what the demo and the compose file run — the runtime enforces the roles
+the AI application asserts, and a client that can reach it can assert any role. That is a trust
+boundary, not authentication, and `/healthz` reports `caller_identity_is_verified: false` so a
+deployment cannot be in this mode without saying so.
+
+A `verified_token` mode exists and is production-shaped: it requires a signed caller token and
+checks the signature, issuer, audience and expiry before deriving a subject and roles, refuses
+the assertion headers outright, and fails closed on anything malformed. It verifies offline
+against a configured public key, so it needs no identity provider to demonstrate — and
+integrating a real one (populating the key ring from a JWKS endpoint, handling refresh and
+revocation) is deliberately out of scope and is not implied to exist.
 
 **Disablement is not revocation.** A disabled version cannot enter a *new* snapshot, but a
 runtime holding an older snapshot serves it until its next refresh — up to the refresh

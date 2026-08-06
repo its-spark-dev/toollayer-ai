@@ -13,8 +13,12 @@ The execution sequence is fixed and every step can refuse:
 3. Request construction from the published bindings.
 4. Destination authorization, including post-resolution address checks.
 5. A bounded request with no redirects and no retries.
-6. A bounded, defensively decoded response.
+6. A response read as a stream and cut off at the byte limit, then decoded defensively.
 7. A result explicitly marked as untrusted content.
+
+Step 6 is a *streaming* bound, not a truncation applied afterwards. The distinction is the
+difference between capping what the runtime processes and capping what it receives; only the
+second one survives an upstream that answers with an unbounded body.
 
 Authorization by role is *not* here. It runs one layer up, in the runtime, because it needs
 the caller identity that this layer deliberately knows nothing about.
@@ -50,6 +54,7 @@ class ExecutionLimits:
 
     connect_timeout_seconds: float = 3.0
     read_timeout_seconds: float = 10.0
+    #: Enforced while the body is being read, so this bounds memory as well as the result.
     max_response_bytes: int = 1024 * 1024
 
     def __post_init__(self) -> None:
@@ -75,10 +80,24 @@ class HttpTransport(Protocol):
 class HttpxTransport:
     """The default transport.
 
-    Redirects are disabled at the client rather than handled after the fact. A redirect
-    would send the request to a destination the policy never authorized, so it is a failure
-    here rather than a hop — and disabling it at the client means no code path can forget.
+    Two properties are enforced here rather than checked afterwards.
+
+    **Redirects are disabled at the client.** A redirect would send the request to a
+    destination the policy never authorized, so it is a failure rather than a hop — and
+    disabling it at the client means no code path can forget.
+
+    **The body is bounded while it is being read, not after.** The response is consumed as a
+    stream in fixed-size chunks and the connection is closed the moment the accumulated
+    length exceeds the limit. Reading ``response.content`` would have loaded the whole body
+    into memory first, which turns "the result is capped" into "the memory is not" — an
+    upstream returning ten gigabytes would have been fully received before anything refused
+    it. ``Content-Length`` is used as an early-exit hint only; a missing or lying header
+    changes nothing, because the running total is what decides.
     """
+
+    #: Read granularity. Large enough that a normal response costs few iterations, small
+    #: enough that the overshoot past the limit before the check fires stays trivial.
+    _CHUNK_BYTES: Final = 64 * 1024
 
     def send(
         self,
@@ -95,24 +114,81 @@ class HttpxTransport:
         headers = dict(request.headers)
         headers.setdefault("user-agent", "toollayer-runtime/0.1")
 
+        # One byte past the limit is enough for the executor to detect the overrun. Nothing
+        # beyond that is ever collected, so the peak memory a hostile upstream can cause is
+        # the limit plus one chunk.
+        ceiling = limits.max_response_bytes + 1
+
         try:
-            with httpx.Client(timeout=timeout, follow_redirects=False, trust_env=False) as client:
-                response = client.request(
+            with (
+                httpx.Client(
+                    timeout=timeout,
+                    follow_redirects=False,
+                    trust_env=False,
+                    transport=self._transport(),
+                ) as client,
+                client.stream(
                     request.method,
                     request.url,
                     headers=headers,
                     content=request.body,
-                )
-                body = response.content[: limits.max_response_bytes + 1]
-                return response.status_code, dict(response.headers), body
+                ) as response,
+            ):
+                if _declared_length_exceeds(response.headers, limits.max_response_bytes):
+                    # A truthful oversized Content-Length lets the connection close
+                    # before a single body byte is read. This is an optimization, never
+                    # the control: a chunked response declares no length at all, and a
+                    # lying one is caught by the loop below.
+                    raise PolicyDenied(
+                        ErrorCode.RESPONSE_TOO_LARGE,
+                        f"the upstream response exceeds the {limits.max_response_bytes} byte limit",
+                    )
+
+                collected = bytearray()
+                for chunk in response.iter_bytes(self._CHUNK_BYTES):
+                    collected.extend(chunk)
+                    if len(collected) >= ceiling:
+                        # Leaving the `with` block closes the response, which tears down
+                        # the connection without draining the remainder. An endless
+                        # stream therefore ends here rather than being consumed to
+                        # completion for nothing.
+                        del collected[ceiling:]
+                        return response.status_code, dict(response.headers), bytes(collected)
+                return response.status_code, dict(response.headers), bytes(collected)
         except httpx.TimeoutException:
             raise PolicyDenied(
                 ErrorCode.UPSTREAM_TIMEOUT, "the upstream API did not respond in time"
             ) from None
         except httpx.HTTPError:
+            # The upstream's own error text is never surfaced. It is attacker-influenceable
+            # and would end up in logs.
             raise PolicyDenied(
                 ErrorCode.UPSTREAM_UNAVAILABLE, "the upstream API could not be reached"
             ) from None
+
+    def _transport(self) -> httpx.BaseTransport:
+        """Build the underlying transport with retries disabled.
+
+        Explicit rather than inherited: a retry would repeat a call that may have already
+        had an effect upstream, and for a governed write that is worse than failing.
+        """
+        return httpx.HTTPTransport(retries=0)
+
+
+def _declared_length_exceeds(headers: httpx.Headers, maximum: int) -> bool:
+    """Whether a well-formed ``Content-Length`` already puts the body over the limit.
+
+    A malformed, absent, or understated value returns ``False`` and the streaming loop
+    decides. The header is a hint from the same party the limit exists to constrain, so it
+    can only ever make the runtime refuse *earlier*, never accept more.
+    """
+    raw = headers.get("content-length")
+    if raw is None:
+        return False
+    try:
+        return int(raw) > maximum
+    except ValueError:
+        return False
 
 
 class ToolExecutor:

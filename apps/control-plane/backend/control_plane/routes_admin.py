@@ -238,6 +238,7 @@ def create_snapshot(
     deployment_key: str,
     payload: CreateSnapshotRequest,
     session: SessionDep,
+    settings: SettingsDep,
     _: AdminDep,
 ) -> dict[str, Any]:
     """Create the next immutable snapshot for a deployment."""
@@ -251,6 +252,7 @@ def create_snapshot(
             for selection in payload.selections
         ),
         created_by=payload.created_by,
+        signing_key=settings.signing_key(),
     )
     return _snapshot_summary(snapshot)
 
@@ -365,6 +367,7 @@ def _snapshot_summary(snapshot: DeploymentSnapshot) -> dict[str, Any]:
     tool_count = sum(
         len(connector.get("tools", [])) for connector in document.get("connectors", [])
     )
+    signature = document.get("signature")
     return {
         "deployment_key": str(document["deployment_key"]),
         "revision": snapshot.revision,
@@ -375,4 +378,10 @@ def _snapshot_summary(snapshot: DeploymentSnapshot) -> dict[str, Any]:
         "active": snapshot.active,
         "created_at": _iso(snapshot.created_at),
         "created_by": snapshot.created_by,
+        # Which key signed it and with what algorithm — both public facts an operator needs
+        # during a rotation. The signature value itself stays in the document, and the
+        # private key never appears in any response.
+        "signed": signature is not None,
+        "signing_key_id": signature["key_id"] if isinstance(signature, dict) else None,
+        "signature_algorithm": signature["algorithm"] if isinstance(signature, dict) else None,
     }

@@ -46,6 +46,15 @@ export TOOLLAYER_ALLOW_PLAINTEXT_HTTP="true"
 export TOOLLAYER_ALLOW_LOOPBACK_DESTINATIONS="true"
 export TOOLLAYER_SNAPSHOT_REFRESH_SECONDS="5"
 
+# Snapshot signing material for this run only. Generated here, held in the environment of
+# the three child processes, and gone when the script exits — so the demo exercises the
+# signed path (the runtime's default) without any key file existing in the repository.
+#
+# The Control Plane gets the private half; the Runtime gets the public half. Both are in this
+# shell because one script starts both services; a real deployment keeps them apart.
+eval "$("${PY_BIN}" scripts/generate_signing_key.py --key-id demo-signing-key)"
+echo "signing snapshots with ephemeral key ${TOOLLAYER_SNAPSHOT_SIGNING_KEY_ID}"
+
 mkdir -p "${LOG_DIR}" "${REPO_ROOT}/data"
 rm -f "${REPO_ROOT}/data/demo.db"
 

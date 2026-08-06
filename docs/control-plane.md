@@ -156,8 +156,9 @@ A deployment is a named runtime. A snapshot is the immutable set of connector ve
 serve.
 
 Snapshot construction resolves each selection to an exact published version and embeds it
-whole. The runtime then needs one request to know everything it may serve, and can verify what
-it received without trusting the transport.
+whole. The runtime then needs one request to know everything it may serve, and can check both
+what it received and who produced it without trusting the transport: the digest for the first,
+the Ed25519 signature for the second.
 
 - Exactly one version per connector. A duplicate is rejected.
 - A disabled version cannot enter a new snapshot.

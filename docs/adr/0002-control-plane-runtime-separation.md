@@ -22,7 +22,8 @@ The **Runtime** owns request time: whether *this* call, by *this* caller, may pr
 authors or publishes anything.
 
 They communicate through exactly one read-only, versioned HTTP endpoint that serves an
-immutable, digest-verified snapshot. No shared database, no callback, no push.
+immutable snapshot. The consumer recomputes its content digest, and separately verifies the
+producer signature it carries. No shared database, no callback, no push.
 
 ## Consequences
 

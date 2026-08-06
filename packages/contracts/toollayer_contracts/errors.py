@@ -55,6 +55,10 @@ class ErrorCode:
     # Runtime execution
     SNAPSHOT_UNAVAILABLE: Final = "snapshot_unavailable"
     SNAPSHOT_INTEGRITY_FAILED: Final = "snapshot_integrity_failed"
+    #: The content matched its digest but the producer could not be authenticated. Distinct
+    #: from SNAPSHOT_INTEGRITY_FAILED because the two say different things to an operator:
+    #: one means "these bytes are damaged", the other means "these bytes are not ours".
+    SNAPSHOT_SIGNATURE_INVALID: Final = "snapshot_signature_invalid"
     UNKNOWN_TOOL: Final = "unknown_tool"
     ARGUMENT_VALIDATION_FAILED: Final = "argument_validation_failed"
     NO_TOOL_SELECTED: Final = "no_tool_selected"
@@ -92,6 +96,7 @@ _STATUS_BY_CODE: Final[dict[str, int]] = {
     ErrorCode.ROLE_NOT_PERMITTED: 403,
     ErrorCode.SNAPSHOT_UNAVAILABLE: 503,
     ErrorCode.SNAPSHOT_INTEGRITY_FAILED: 502,
+    ErrorCode.SNAPSHOT_SIGNATURE_INVALID: 502,
     ErrorCode.UNKNOWN_TOOL: 404,
     ErrorCode.ARGUMENT_VALIDATION_FAILED: 422,
     ErrorCode.NO_TOOL_SELECTED: 422,

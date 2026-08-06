@@ -34,6 +34,12 @@ services:
       TOOLLAYER_ADMIN_TOKEN: ${TOOLLAYER_ADMIN_TOKEN:-dev-admin-token-change-me}
       TOOLLAYER_SERVICE_TOKEN: ${TOOLLAYER_SERVICE_TOKEN:-dev-service-token-change-me}
       TOOLLAYER_CONTROL_PLANE_CORS_ORIGINS: http://localhost:5173
+      # Snapshot signing material, supplied by the caller. `make demo-docker` generates an
+      # ephemeral pair and exports it, so no key is stored in this file or in any image.
+      # Leaving these empty publishes unsigned snapshots, which the runtime below refuses
+      # unless it too is explicitly put in unsigned mode.
+      TOOLLAYER_SNAPSHOT_SIGNING_KEY: ${TOOLLAYER_SNAPSHOT_SIGNING_KEY:-}
+      TOOLLAYER_SNAPSHOT_SIGNING_KEY_ID: ${TOOLLAYER_SNAPSHOT_SIGNING_KEY_ID:-}
     volumes:
       - control-plane-data:/data
     healthcheck:
@@ -68,6 +74,13 @@ services:
       TOOLLAYER_ALLOW_PRIVATE_ADDRESSES: "true"
       TOOLLAYER_SNAPSHOT_REFRESH_SECONDS: "15"
       TOOLLAYER_RUNTIME_CORS_ORIGINS: http://localhost:5173
+      # The public half of the Control Plane's signing key. Verification is required by
+      # default, so an empty value here makes the runtime refuse every snapshot rather than
+      # accept an unauthenticated one — which is the intended failure mode.
+      TOOLLAYER_SNAPSHOT_TRUSTED_KEYS: ${TOOLLAYER_SNAPSHOT_TRUSTED_KEYS:-}
+      TOOLLAYER_SNAPSHOT_VERIFICATION: ${TOOLLAYER_SNAPSHOT_VERIFICATION:-required}
+      # Asserted identity, and the compose topology says so. /healthz reports it too.
+      TOOLLAYER_CALLER_AUTH_MODE: ${TOOLLAYER_CALLER_AUTH_MODE:-asserted_header}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8082/healthz')"]
       interval: 5s
@@ -80,10 +93,15 @@ services:
       dockerfile: docker/Dockerfile.console
     image: toollayer-console:local
     ports:
-      - "5173:80"
+      - "5173:8080"
     depends_on:
       control-plane:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
 volumes:
   control-plane-data:

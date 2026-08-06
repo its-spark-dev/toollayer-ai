@@ -32,7 +32,7 @@ agree before a request leaves the process.
 
 **Good.** A compromised stored `base_url` is not sufficient to redirect traffic. A public
 hostname resolving to cloud metadata is refused. Every bound is finite, so a slow or enormous
-upstream cannot hold a worker open. Nine tests in `tests/security` demonstrate the refusals.
+upstream cannot hold a worker open. The refusals are demonstrated by `TestDestinationPolicy` and `TestMalformedDestinations` in `tests/unit/test_policy_engine.py`, and by `TestDestinationControls` in `tests/security/test_execution_boundary.py`.
 
 **Bad.** Every deployment must configure its allowlist; nothing works out of the box. A
 legitimate upstream that changes its address needs a configuration change. Resolving before

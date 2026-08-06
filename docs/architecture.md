@@ -11,7 +11,7 @@ The design goals follow from taking that question seriously:
 |---|---|
 | A model's output is never trusted | Prompt-level guardrails as the primary control |
 | What a tool *is* is decided before runtime, by a human | Generating tools on the fly from a live specification |
-| An artifact a runtime serves is verifiable | "The control plane told us so" as the integrity story |
+| An artifact a runtime serves is verifiable *and* attributable | "The control plane told us so" as the integrity story |
 | The two halves can evolve independently | A shared database, a shared object model, or a shared process |
 | Provider neutrality is testable | A single adapter, or a canonical format that is one provider's format renamed |
 | Refusing beats approximating | Best-effort conversion of features the executor cannot honor |
@@ -117,7 +117,10 @@ Four properties make this enough:
   cannot publish a tool.
 - **Self-contained.** One response carries every connector definition the deployment may
   serve. No follow-up requests, no partial state.
-- **Self-verifying.** The document embeds its own digest, recomputed by the consumer.
+- **Content-addressed and signed.** The document embeds a digest of its own canonical
+  bytes, which the consumer recomputes, and a producer signature the consumer verifies against
+  a public key it was configured with out of band. The digest answers *are these the same
+  bytes*; only the signature answers *did we produce them*.
 
 Neither service imports the other's modules. `tests/contract` fails if the schemas and the
 models drift, which is the failure mode that would otherwise go unnoticed until production.
@@ -183,7 +186,8 @@ draft ──review──> draft' ──publish──> PublishedVersion (immutabl
 | A draft is edited concurrently | Optimistic revision check | `revision_conflict`, reload and retry |
 | The control plane is unreachable | The runtime keeps its verified snapshot | A warning log; requests still served |
 | A snapshot fails its digest check | Load refuses; the previous snapshot stays in service | `snapshot_integrity_failed` |
-| An upstream API is slow or huge | Finite timeouts and a byte cap | `upstream_timeout` / `response_too_large` |
+| A snapshot's producer cannot be authenticated | Load refuses; the previous snapshot stays in service | `snapshot_signature_invalid` |
+| An upstream API is slow or huge | Finite timeouts and a byte cap enforced while streaming | `upstream_timeout` / `response_too_large` |
 | An upstream redirects | Redirects are never followed | `redirect_not_allowed` |
 
 Nothing here degrades into "serve whatever arrived". Every failure either isolates to one
@@ -227,8 +231,9 @@ behavior does not match their description. The refusal is visible; the mismatch 
 exchange, every security claim is a repeatable assertion rather than one sample of a
 distribution.
 
-**Static bearer tokens.** Not an identity system. Sufficient to demonstrate that two audiences
-have two different credentials, and honestly labelled as a simplification.
+**Static bearer tokens between the services.** Not an identity system. Sufficient to demonstrate
+that two audiences have two different credentials, and honestly labelled as a simplification.
+Snapshot signing keys are a different matter and do rotate, through a trusted key ring.
 
 ## 12. Limitations
 

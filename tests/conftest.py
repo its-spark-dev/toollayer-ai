@@ -10,6 +10,12 @@ the internet would be a test that passes or fails for reasons unrelated to the c
 **Every test gets its own database.** The Control Plane is configured through the
 environment, so the fixtures set it, clear the cached settings, and dispose the engine. Tests
 that share a database pass in isolation and fail in a suite.
+
+**Signing keys are generated, never stored.** The Control Plane under test signs its
+snapshots and the runtime verifies them, so the default path through this suite is the signed
+one. The key pair is created in memory when this module is imported and exists only for the
+process — there is no key file anywhere in the repository that could be mistaken for a
+credential, and no fixture that quietly turns verification off.
 """
 
 from __future__ import annotations
@@ -22,6 +28,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from toollayer_contracts.signing import (
+    TrustedKeyRing,
+    encoded_private_key,
+    generate_signing_key,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_SPEC = REPO_ROOT / "examples" / "support-api.openapi.yaml"
 
@@ -31,6 +43,59 @@ ADMIN_HEADERS = {"x-toollayer-admin-token": ADMIN_TOKEN}
 SERVICE_HEADERS = {"x-toollayer-service-token": SERVICE_TOKEN}
 
 DEMO_ORIGIN = "http://demo-api.internal:8081"
+
+#: The Control Plane's snapshot signing key for this test process, and the key ring the
+#: runtime is configured to trust. Ephemeral by construction.
+SIGNING_KEY = generate_signing_key("test-snapshot-key")
+SIGNING_KEY_SEED = encoded_private_key(SIGNING_KEY)
+TRUSTED_KEYS = TrustedKeyRing.parse([f"{SIGNING_KEY.key_id}:{SIGNING_KEY.encoded_public_key()}"])
+
+#: A second key, trusted by nobody. Every "signed by the wrong key" test uses this rather
+#: than corrupting bytes, because a valid signature from an untrusted key and a malformed
+#: signature are different failures and must be shown to fail differently.
+UNTRUSTED_KEY = generate_signing_key("untrusted-key")
+
+
+def signed_verification() -> Any:
+    """The verification policy the runtime uses in this suite: required, one trusted key.
+
+    Exposed as the ``snapshot_verification`` fixture below rather than imported directly.
+    ``tests`` is a namespace package, so ``from tests.conftest import ...`` would import a
+    *second* copy of this module with a *second* generated key pair — signatures made by one
+    would then fail against the other, which is a confusing way to learn that fixtures are
+    the supported channel.
+    """
+    from runtime_service.snapshot import SnapshotVerification
+
+    return SnapshotVerification(mode="required", trusted_keys=TRUSTED_KEYS)
+
+
+@pytest.fixture()
+def snapshot_verification() -> Any:
+    """The signed-mode verification policy, for tests that load a snapshot themselves."""
+    return signed_verification()
+
+
+@pytest.fixture()
+def signing_key() -> Any:
+    """The Control Plane's ephemeral signing key for this process."""
+    return SIGNING_KEY
+
+
+@pytest.fixture()
+def untrusted_signing_key() -> Any:
+    """A well-formed key that no consumer in this suite trusts."""
+    return UNTRUSTED_KEY
+
+
+@pytest.fixture()
+def admin_headers() -> dict[str, str]:
+    return dict(ADMIN_HEADERS)
+
+
+@pytest.fixture()
+def service_headers() -> dict[str, str]:
+    return dict(SERVICE_HEADERS)
 
 
 @pytest.fixture(scope="session")
@@ -49,6 +114,8 @@ def control_plane(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[T
     monkeypatch.setenv("TOOLLAYER_CONTROL_PLANE_DATABASE_URL", f"sqlite:///{database}")
     monkeypatch.setenv("TOOLLAYER_ADMIN_TOKEN", ADMIN_TOKEN)
     monkeypatch.setenv("TOOLLAYER_SERVICE_TOKEN", SERVICE_TOKEN)
+    monkeypatch.setenv("TOOLLAYER_SNAPSHOT_SIGNING_KEY", SIGNING_KEY_SEED)
+    monkeypatch.setenv("TOOLLAYER_SNAPSHOT_SIGNING_KEY_ID", SIGNING_KEY.key_id)
     cp_config.reset_settings_cache()
     cp_db.reset_engine_cache()
 
@@ -195,10 +262,14 @@ def runtime_executor(outbound: InProcessTransport, stub_resolver: _StubResolver)
 
 @pytest.fixture()
 def loaded_snapshot(published_snapshot: dict[str, Any]) -> Any:
-    """The published snapshot, loaded and verified the way the runtime loads it."""
+    """The published snapshot, loaded exactly the way the runtime loads it.
+
+    Including signature verification. A fixture that skipped it would make every test above
+    it pass against an artifact the real runtime would refuse.
+    """
     from runtime_service.snapshot import load_snapshot_document
 
-    return load_snapshot_document(published_snapshot)
+    return load_snapshot_document(published_snapshot, verification=signed_verification())
 
 
 @pytest.fixture()
@@ -209,7 +280,11 @@ def orchestrator(loaded_snapshot: Any, runtime_executor: Any) -> Any:
     from toollayer_mock_llm import MockLLMProvider
 
     store = SnapshotStore(
-        SnapshotClient(base_url="http://control-plane.invalid", service_token=SERVICE_TOKEN),
+        SnapshotClient(
+            base_url="http://control-plane.invalid",
+            service_token=SERVICE_TOKEN,
+            verification=signed_verification(),
+        ),
         deployment_key="demo-workspace",
     )
     store.set(loaded_snapshot)
@@ -243,8 +318,16 @@ def _quiet_runtime_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
             "TOOLLAYER_CONTROL_PLANE_DATABASE_URL",
             "TOOLLAYER_ADMIN_TOKEN",
             "TOOLLAYER_SERVICE_TOKEN",
+            "TOOLLAYER_SNAPSHOT_SIGNING_KEY",
+            "TOOLLAYER_SNAPSHOT_SIGNING_KEY_ID",
         }:
             monkeypatch.delenv(name, raising=False)
+    # The runtime's default is `required`, which needs a key to be usable at all. Setting the
+    # trusted key here rather than relaxing the mode keeps the default under test.
+    monkeypatch.setenv(
+        "TOOLLAYER_SNAPSHOT_TRUSTED_KEYS",
+        f"{SIGNING_KEY.key_id}:{SIGNING_KEY.encoded_public_key()}",
+    )
     runtime_config.reset_settings_cache()
     yield
     runtime_config.reset_settings_cache()

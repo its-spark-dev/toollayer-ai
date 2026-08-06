@@ -5,7 +5,8 @@ Configuration is read from the environment once, validated, and then frozen. Rea
 looked up, and it makes tests order-dependent.
 
 Tokens are compared with a constant-time comparison and are never logged, never echoed in an
-error, and never returned by any endpoint.
+error, and never returned by any endpoint. The snapshot signing key is held the same way, and
+additionally never leaves this process: only the signature it produces does.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Final
+
+from toollayer_contracts.signing import InvalidKeyMaterial, SigningKey
 
 __all__ = ["ControlPlaneSettings", "get_settings", "reset_settings_cache"]
 
@@ -39,6 +42,12 @@ class ControlPlaneSettings:
     cors_origins: tuple[str, ...] = ("http://localhost:5173",)
     max_source_bytes: int = 2 * 1024 * 1024
 
+    #: base64url of a 32-byte Ed25519 seed, supplied through the environment. Empty means
+    #: this Control Plane publishes unsigned snapshots — reported by ``/healthz`` rather than
+    #: left for a consumer to discover.
+    snapshot_signing_key: str = ""
+    snapshot_signing_key_id: str = ""
+
     def __post_init__(self) -> None:
         if len(self.admin_token) < _MIN_TOKEN_LENGTH:
             raise ConfigurationError(
@@ -54,11 +63,41 @@ class ControlPlaneSettings:
             raise ConfigurationError("the admin and service tokens must differ")
         if not self.database_url:
             raise ConfigurationError("a database URL is required")
+        if bool(self.snapshot_signing_key) != bool(self.snapshot_signing_key_id):
+            # Half a configuration is a misconfiguration. Silently signing with a default
+            # key id, or holding a key id with no key, would both produce a deployment whose
+            # actual behavior differs from what the operator wrote down.
+            raise ConfigurationError(
+                "a snapshot signing key and its key id must be configured together"
+            )
+        if self.snapshot_signing_key:
+            # Parsed at startup so bad key material fails the process rather than failing the
+            # first publication, hours later, in front of a user.
+            try:
+                SigningKey.from_encoded(self.snapshot_signing_key_id, self.snapshot_signing_key)
+            except InvalidKeyMaterial as error:
+                raise ConfigurationError(f"the snapshot signing key is unusable: {error}") from None
 
     @property
     def uses_development_tokens(self) -> bool:
         """Whether either credential is still the shipped placeholder."""
         return self.admin_token == _DEV_ADMIN_TOKEN or self.service_token == _DEV_SERVICE_TOKEN
+
+    @property
+    def signs_snapshots(self) -> bool:
+        """Whether this Control Plane authenticates the snapshots it publishes."""
+        return bool(self.snapshot_signing_key)
+
+    def signing_key(self) -> SigningKey | None:
+        """Return the configured signing key, or ``None`` when signing is off.
+
+        Rebuilt on each call rather than stored on the frozen settings object, so the private
+        key exists only for as long as one signing operation needs it and never becomes an
+        attribute something could serialize by accident.
+        """
+        if not self.snapshot_signing_key:
+            return None
+        return SigningKey.from_encoded(self.snapshot_signing_key_id, self.snapshot_signing_key)
 
 
 def _env_tuple(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -88,6 +127,8 @@ def get_settings() -> ControlPlaneSettings:
         service_token=os.environ.get("TOOLLAYER_SERVICE_TOKEN") or _DEV_SERVICE_TOKEN,
         cors_origins=_env_tuple("TOOLLAYER_CONTROL_PLANE_CORS_ORIGINS", ("http://localhost:5173",)),
         max_source_bytes=_env_int("TOOLLAYER_MAX_SOURCE_BYTES", 2 * 1024 * 1024),
+        snapshot_signing_key=os.environ.get("TOOLLAYER_SNAPSHOT_SIGNING_KEY", "").strip(),
+        snapshot_signing_key_id=os.environ.get("TOOLLAYER_SNAPSHOT_SIGNING_KEY_ID", "").strip(),
     )
 
 

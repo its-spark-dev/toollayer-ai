@@ -23,11 +23,14 @@ Each has a test in [`tests/security/`](tests/security/) or [`tests/contract/`](t
 
 - Default-deny destination allowlist with exact origin matching.
 - Post-resolution address checks; link-local refused unconditionally.
-- No redirects, no environment proxies, finite timeouts, bounded responses.
+- No redirects, no environment proxies, no retries, finite timeouts, and a response bound
+  enforced while the body is streamed rather than after it has been read.
 - Closed input schemas; requests built from published bindings rather than supplied arguments.
 - One authorization function shared by discovery and execution.
 - Server-authoritative publication.
-- Digest-verified artifacts, recomputed by the consumer.
+- Content digests recomputed by the consumer, and Ed25519 producer signatures verified
+  against an explicitly configured trusted key. The digest identifies content; the signature
+  authenticates who produced it. Neither replaces TLS.
 - Separate administrator and service credentials, enforced at startup.
 - Untrusted-content marking with no path from a result back into tool selection.
 - Error messages that name the failing rule and location, never the rejected value.
@@ -37,7 +40,9 @@ Each has a test in [`tests/security/`](tests/security/) or [`tests/contract/`](t
 The full list is in [`docs/threat-model.md`](docs/threat-model.md) §7. The ones most likely to
 matter:
 
-- The runtime does not authenticate callers; it enforces roles the client asserts.
+- In the default `asserted_header` mode the runtime does not authenticate callers; it enforces
+  roles the client asserts, and `/healthz` reports that it is doing so. A `verified_token` mode
+  checks a signed caller token's signature, issuer, audience and expiry.
 - Disablement takes effect at the next snapshot refresh, not immediately.
 - A time-of-check-to-time-of-use gap exists between DNS resolution and connection.
 - Argument validation is structural, not semantic — authorization over *which records* a caller

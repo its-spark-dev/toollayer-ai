@@ -53,6 +53,12 @@ export TOOLLAYER_ALLOWED_ORIGINS="http://localhost:${DEMO_API_PORT}"
 export TOOLLAYER_ALLOW_PLAINTEXT_HTTP="true"
 export TOOLLAYER_ALLOW_LOOPBACK_DESTINATIONS="true"
 export TOOLLAYER_SNAPSHOT_REFRESH_SECONDS="5"
+
+# Ephemeral signing material for this capture only, so the screenshots are taken from a stack
+# running the same signed path as `make demo` and as CI. Generated per run and never written to
+# disk — a capture that quietly ran in unsigned mode would produce images of a configuration
+# nobody deploys.
+eval "$("${PY_BIN}" scripts/generate_signing_key.py --key-id capture-signing-key)"
 # Both spellings of the loopback host: the browser treats them as different origins, and a
 # mismatch here surfaces as a silent CORS failure rather than an error the console can show.
 export TOOLLAYER_CONTROL_PLANE_CORS_ORIGINS="http://localhost:${CONSOLE_PORT},http://127.0.0.1:${CONSOLE_PORT}"

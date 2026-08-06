@@ -4,8 +4,12 @@
 # the development placeholder. A real deployment would put the console behind an
 # authenticating proxy rather than shipping any credential to the browser — see
 # docs/threat-model.md.
+#
+# Base images are pinned to a patch version. A floating tag makes a rebuild silently different
+# from the build that was tested; docs/deployment.md records how these are updated so pinning
+# does not turn into never patching.
 
-FROM node:20-alpine AS build
+FROM node:20.18.1-alpine AS build
 WORKDIR /app
 
 COPY apps/control-plane/frontend/package.json apps/control-plane/frontend/package-lock.json ./
@@ -23,7 +27,21 @@ ENV VITE_CONTROL_PLANE_URL=$VITE_CONTROL_PLANE_URL \
 
 RUN npm run build
 
-FROM nginx:1.27-alpine AS serve
+FROM nginx:1.27.3-alpine AS serve
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY docker/console-nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+
+# Run as the unprivileged `nginx` user rather than starting the master process as root.
+# The stock image drops workers to `nginx` but keeps the master privileged; this container
+# serves static files and needs nothing that requires it. The paths below are the ones nginx
+# writes to at runtime, so they have to be owned by the user that will do the writing.
+RUN touch /var/run/nginx.pid \
+    && chown -R nginx:nginx /var/cache/nginx /var/run/nginx.pid /usr/share/nginx/html
+USER nginx
+
+# 8080, not 80: an unprivileged process cannot bind a port below 1024, and the alternative —
+# granting CAP_NET_BIND_SERVICE — is a capability for a problem that does not need to exist.
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=6 \
+    CMD wget --quiet --spider http://127.0.0.1:8080/ || exit 1

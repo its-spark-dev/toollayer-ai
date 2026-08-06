@@ -19,13 +19,45 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 PUBLIC_DOCS = [
+    # `docs/**` covers the audits under docs/audits/ as well.
     *sorted((REPO_ROOT / "docs").rglob("*.md")),
     REPO_ROOT / "README.md",
     REPO_ROOT / "SECURITY.md",
     REPO_ROOT / "CONTRIBUTING.md",
     REPO_ROOT / "CODE_OF_CONDUCT.md",
-    REPO_ROOT / "PRE_PUBLICATION_REVIEW.md",
+    REPO_ROOT / "CHANGELOG.md",
 ]
+
+#: Phrases that were true of an earlier design and are not true now. Each one is a claim this
+#: repository actually made and had to correct, so the check exists to stop it coming back —
+#: in a new document, in a rewritten paragraph, or in a copy-paste from the old text.
+#:
+#: The pattern is what to refuse; the note says what to write instead.
+RETIRED_CLAIMS: tuple[tuple[str, str], ...] = (
+    (
+        r"rather than buffered",
+        "the response bound is streaming; say so rather than reusing the old test name",
+    ),
+    (
+        r"digest[^.\n]{0,80}\bauthenticat",
+        "a digest identifies content; the signature authenticates the producer",
+    ),
+    (
+        r"self-verifying",
+        "a document cannot verify itself; say digest-verified, or signed by a trusted key",
+    ),
+    (
+        r"statically reviewed, not executed",
+        "the Docker topology is executed in CI; update the verification status",
+    ),
+    (
+        # Only an affirmative claim. "not production-ready" and "is not a production system"
+        # are the statements this repository does make, and refusing those too would push
+        # someone to delete the disclaimer rather than fix a claim.
+        r"(?<!not )(?<!never )\bproduction[- ]ready\b",
+        "this project does not claim production readiness",
+    ),
+)
 
 #: Words that mean a document was left unfinished. `description_origin` legitimately uses the
 #: word "placeholder" in prose, so the check looks for the markup form.
@@ -79,7 +111,9 @@ def check_named_tests(problems: list[str]) -> None:
         path.read_text(encoding="utf-8") for path in (REPO_ROOT / "tests").rglob("*.py")
     )
     for doc in PUBLIC_DOCS:
-        if not doc.exists():
+        # An audit records what a test was called at the version it describes. Requiring those
+        # names to still exist would mean either never renaming a test or rewriting history.
+        if not doc.exists() or "audits/" in doc.as_posix():
             continue
         for name in set(
             re.findall(r"`(Test[A-Za-z0-9_]+|test_[a-z0-9_]+)`", doc.read_text("utf-8"))
@@ -121,28 +155,130 @@ def check_unfinished(problems: list[str]) -> None:
                 )
 
 
+def _console_test_count() -> int:
+    """Count the console's test cases by reading its test files.
+
+    Counted rather than executed: running Vitest needs Node and an installed
+    ``node_modules``, which this check cannot assume. ``it(`` at the start of a statement is
+    the only form the console's tests use, and the console workflow runs them for real — so
+    a miscount here would show up as a mismatch between two numbers rather than as a silent
+    wrong answer.
+    """
+    root = REPO_ROOT / "apps" / "control-plane" / "frontend" / "src"
+    total = 0
+    for path in sorted(root.rglob("*.test.tsx")) + sorted(root.rglob("*.test.ts")):
+        total += len(re.findall(r"^\s*it\(", path.read_text(encoding="utf-8"), re.M))
+    return total
+
+
 def check_test_count(problems: list[str]) -> None:
-    """A claimed test count must match what the suite actually runs."""
+    """Every claimed test count anywhere in the documentation must match reality.
+
+    Counts are derived here and compared against every document, rather than maintained by
+    hand in several places. The repository previously carried 185 in two documents and 186
+    in three others, which is what a hand-maintained number does over time.
+    """
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests", "--no-header", "-p", "no:cacheprovider"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
     )
+    if result.returncode != 0:
+        # Checked, because a failing suite still prints an "N passed" line for the tests that
+        # did pass — and reading N off a red run would report a count nobody should trust.
+        _fail(problems, "the test suite does not pass, so its count cannot be verified")
+        return
     match = re.search(r"(\d+) passed", result.stdout + result.stderr)
     if not match:
         _fail(problems, "could not determine the test count; the suite did not report a pass line")
         return
-    actual = int(match.group(1))
 
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    for claimed in re.findall(r"make test\s+#\s*(\d+) Python tests", readme):
-        if int(claimed) != actual:
-            _fail(problems, f"README claims {claimed} Python tests, the suite runs {actual}")
-    for claimed in re.findall(r"tests-(\d+)%20passing", readme):
-        # The badge counts the console tests too, which this process does not run.
-        if int(claimed) < actual:
-            _fail(problems, f"the test badge claims {claimed}, below the {actual} Python tests")
+    python_tests = int(match.group(1))
+    console_tests = _console_test_count()
+    combined = python_tests + console_tests
+
+    for doc in PUBLIC_DOCS:
+        # A versioned audit records what was true when it was written. Holding it to today's
+        # numbers would either force rewriting history or delete the record.
+        if not doc.exists() or "audits/" in doc.as_posix():
+            continue
+        text = doc.read_text(encoding="utf-8")
+        relative = doc.relative_to(REPO_ROOT)
+
+        for claimed in re.findall(r"(\d+) Python tests", text):
+            if int(claimed) != python_tests:
+                _fail(
+                    problems,
+                    f"{relative}: claims {claimed} Python tests, the suite runs {python_tests}",
+                )
+        for claimed in re.findall(r"(\d+) console tests", text):
+            if int(claimed) != console_tests:
+                _fail(
+                    problems,
+                    f"{relative}: claims {claimed} console tests, there are {console_tests}",
+                )
+        for claimed in re.findall(r"tests-(\d+)%20passing", text):
+            if int(claimed) != combined:
+                _fail(
+                    problems,
+                    f"{relative}: the test badge claims {claimed}, the real total is "
+                    f"{combined} ({python_tests} Python + {console_tests} console)",
+                )
+
+    # Per-suite counts, wherever a document breaks them down. Derived the same way, so a new
+    # test file cannot leave a stale subtotal behind.
+    for suite in ("unit", "contract", "integration", "security", "e2e"):
+        collected = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                f"tests/{suite}",
+                "--collect-only",
+                "-q",
+                "--no-header",
+                "-p",
+                "no:cacheprovider",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        counted = sum(int(n) for n in re.findall(rf"tests/{suite}/\S+: (\d+)", collected.stdout))
+        if not counted:
+            continue
+        for doc in PUBLIC_DOCS:
+            if not doc.exists() or "audits/" in doc.as_posix():
+                continue
+            text = doc.read_text(encoding="utf-8")
+            for claimed in re.findall(rf"`tests/{suite}`\s*\|\s*(\d+)\s*\|", text):
+                if int(claimed) != counted:
+                    _fail(
+                        problems,
+                        f"{doc.relative_to(REPO_ROOT)}: claims {claimed} tests in "
+                        f"tests/{suite}, there are {counted}",
+                    )
+
+
+def check_retired_claims(problems: list[str]) -> None:
+    """No document may reintroduce a claim this repository has already had to correct."""
+    for doc in PUBLIC_DOCS:
+        if not doc.exists():
+            continue
+        text = doc.read_text(encoding="utf-8")
+        for pattern, note in RETIRED_CLAIMS:
+            for match in re.finditer(pattern, text, re.I):
+                # The audit documents quote the old wording when recording what was fixed.
+                # Quoting a corrected claim is the opposite of making it.
+                if "audits/" in str(doc):
+                    continue
+                line = text[: match.start()].count("\n") + 1
+                _fail(
+                    problems,
+                    f"{doc.relative_to(REPO_ROOT)}:{line}: retired claim "
+                    f"{match.group()!r} — {note}",
+                )
 
 
 def check_captured_assets(problems: list[str]) -> None:
@@ -179,6 +315,7 @@ def main() -> int:
         check_unfinished,
         check_captured_assets,
         check_alt_text,
+        check_retired_claims,
         check_test_count,
     )
     for check in checks:

@@ -1,0 +1,51 @@
+# Dependency updates, grouped so a routine week produces a small number of reviewable pull
+# requests rather than one per package. Security updates are deliberately left ungrouped:
+# they should be reviewable and mergeable on their own.
+
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      # Matches this repository's convention. The hygiene job rejects attribution trailers,
+      # and Dependabot adds none.
+      prefix: "build(deps)"
+
+  - package-ecosystem: npm
+    directory: "/apps/control-plane/frontend"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      console-dev-dependencies:
+        dependency-type: development
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "build(deps)"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci(deps)"
+
+  - package-ecosystem: docker
+    # Base images are pinned to a patch version, which is only useful if something proposes
+    # the next one. Without this, pinning becomes never patching.
+    directories:
+      - "/docker"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(deps)"

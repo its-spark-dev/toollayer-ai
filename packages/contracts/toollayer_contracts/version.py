@@ -14,8 +14,15 @@ from __future__ import annotations
 import re
 from typing import Final, NamedTuple
 
-CONTRACT_VERSION: Final = "1.0.0"
-"""The contract version this build produces."""
+CONTRACT_VERSION: Final = "1.1.0"
+"""The contract version this build produces.
+
+1.1.0 added the optional ``signature`` block to the deployment snapshot. The field is
+optional, so a 1.0.0 document still validates against this build. The snapshot schema is
+closed (``additionalProperties: false``), so the reverse is not true: a 1.0.0 consumer
+refuses a signed document. Declaring the minor bump makes that refusal say
+``unsupported_contract_version`` rather than surfacing as an opaque schema violation.
+"""
 
 _SEMVER: Final = re.compile(
     r"^(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)\.(?P<patch>0|[1-9][0-9]*)"

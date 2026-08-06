@@ -21,6 +21,7 @@ from tests.conftest import ADMIN_HEADERS, SERVICE_HEADERS
 
 from toollayer_contracts import (
     CONTRACT_VERSION,
+    SNAPSHOT_DIGEST_EXCLUDED,
     ConnectorDefinition,
     DeploymentSnapshot,
     ToolDefinition,
@@ -124,13 +125,36 @@ class TestModelSchemaAgreement:
 
 class TestCrossServiceCompatibility:
     def test_the_runtime_accepts_what_the_control_plane_published(
-        self, published_snapshot: dict[str, Any]
+        self, published_snapshot: dict[str, Any], snapshot_verification: Any
     ) -> None:
         from runtime_service.snapshot import load_snapshot_document
 
-        loaded = load_snapshot_document(published_snapshot)
+        loaded = load_snapshot_document(published_snapshot, verification=snapshot_verification)
         assert loaded.revision == 1
         assert loaded.tools_by_name
+
+    def test_every_published_timestamp_is_a_valid_rfc_3339_date_time(
+        self, published_snapshot: dict[str, Any]
+    ) -> None:
+        """Format keywords are only enforced when a format validator is installed.
+
+        Without ``rfc3339-validator``, jsonschema's ``FormatChecker`` silently skips
+        ``date-time`` — so "the document validates against the schema" quietly meant "except
+        for formats". It did not: timestamps read back from SQLite came out naive, giving
+        ``2026-08-06T01:53:37`` with no UTC offset. This asserts the format directly so the
+        check does not depend on which optional packages happen to be present.
+        """
+        from jsonschema import FormatChecker
+
+        checker = FormatChecker()
+        stamps = [published_snapshot["created_at"]]
+        for connector in published_snapshot["connectors"]:
+            stamps.extend(connector["audit"].values())
+
+        assert stamps
+        for stamp in stamps:
+            assert checker.conforms(stamp, "date-time"), stamp
+            assert stamp.endswith("Z"), f"{stamp} carries no UTC offset"
 
     def test_the_snapshot_verifies_against_its_own_digest(
         self, published_snapshot: dict[str, Any]
@@ -138,7 +162,7 @@ class TestCrossServiceCompatibility:
         assert verify_digest(
             published_snapshot,
             published_snapshot["snapshot_digest"],
-            exclude=("snapshot_id", "snapshot_digest"),
+            exclude=SNAPSHOT_DIGEST_EXCLUDED,
         )
 
     def test_the_runtime_refuses_a_snapshot_whose_content_was_altered(

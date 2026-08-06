@@ -160,7 +160,8 @@ without any other test failing:
 | Models and schemas accept and reject the same documents | One representation drifting from the other |
 | Published documents round-trip through the models unchanged | Serialization asymmetry |
 | The runtime accepts what the control plane published | The actual cross-service claim |
-| A tampered snapshot is refused | The integrity story |
+| A snapshot edited without updating its digest is refused | Content integrity |
+| A snapshot whose content and digest were both replaced is refused | Producer authenticity |
 | A different major version is refused | Version negotiation |
 | Both adapters project every published tool | The neutrality claim |
 | Projection does not mutate the canonical definition | Cross-provider contamination |

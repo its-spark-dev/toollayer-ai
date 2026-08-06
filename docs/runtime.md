@@ -22,7 +22,7 @@ sequenceDiagram
     opt stale
         R->>CP: GET snapshot (If-None-Match)
         CP-->>R: 304, or 200 + document
-        R->>R: validate schema, recompute digest
+        R->>R: validate schema, recompute digest, verify signature
     end
     R->>R: discover tools this caller may use
     R->>P: select a tool from those candidates
@@ -35,7 +35,7 @@ sequenceDiagram
     R->>R: check confirmation requirement
     R->>A: one bounded, allowlisted request
     A-->>R: response
-    R->>R: bound the size, decode defensively, mark untrusted
+    R->>R: stream under the byte cap, decode defensively, mark untrusted
     R->>P: format a response from the result
     R-->>C: selected tool, arguments, result, trace
 ```
@@ -56,10 +56,14 @@ phrasings.
 
 The runtime holds one immutable snapshot in memory and refreshes it on an interval.
 
-**It is verified, not trusted.** Every fetch is validated against the contract schema and its
-digest is recomputed over the canonical serialization. Transport integrity is not artifact
-integrity: TLS proves who sent the bytes, not that the bytes are the artifact that was
-published.
+**It is verified, not trusted.** Every fetch is validated against the contract schema, its
+digest is recomputed over the canonical serialization, and its Ed25519 signature is checked
+against a trusted public key. The two do different jobs: the digest proves the bytes are the
+ones it was taken over — catching corruption and an edit that forgot to update it — while the
+signature proves a holder of the Control Plane's private key produced them. An attacker who can
+rewrite the payload can rewrite the digest with it, so only the signature survives that case.
+Neither is TLS: TLS authenticates the *service* and protects the wire, the signature
+authenticates the *artifact* and keeps holding after it has been cached or relayed.
 
 **It is replaced, never mutated.** A refresh builds a new object and swaps one reference. A
 request that started on revision 4 finishes on revision 4, so a tool cannot change definition
@@ -154,7 +158,9 @@ The outbound call is bounded on every axis: connect timeout, read timeout, respo
 Redirects are disabled at the client rather than handled afterwards, so no code path can
 forget; a 3xx is `redirect_not_allowed`. Environment proxies are ignored.
 
-The response is size-capped and decoded defensively: JSON is parsed only when the upstream
+The response is read as a stream and cut off at the byte cap — the connection closes the moment
+the running total passes it, so an upstream answering with an unbounded body is not received in
+full and then discarded. It is then decoded defensively: JSON is parsed only when the upstream
 declared JSON *and* the bytes actually parse. An upstream returning HTML with a JSON content
 type does not get to decide it will be treated as structured data.
 
@@ -193,6 +199,7 @@ Perfect cross-provider portability is not claimed.
 |---|---|---|
 | No snapshot loaded | `snapshot_unavailable` | 503 |
 | A snapshot failed its digest check | `snapshot_integrity_failed` | 502 |
+| A snapshot's producer could not be authenticated | `snapshot_signature_invalid` | 502 |
 | The tool is not in the snapshot | `unknown_tool` | 404 |
 | Nothing matched the request | `no_tool_selected` | 422 |
 | The arguments do not satisfy the schema | `argument_validation_failed` | 422 |

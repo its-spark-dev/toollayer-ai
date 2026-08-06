@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ToolLayer AI — a governed OpenAPI-to-tool control plane</title>
+    <meta
+      name="description"
+      content="A governed OpenAPI-to-tool control plane and reference runtime that demonstrates safe execution boundaries around untrusted model output."
+    />
+    <!--
+      A static page, deployable to GitHub Pages, for a reader who will not clone the
+      repository. It reuses the console's typography, palette and captured screenshots
+      rather than introducing a second visual identity, and it links to the repository for
+      everything it summarizes. There is no backend behind it and it does not pretend there
+      is: every screenshot is a still from the real application, captured by `make capture`.
+    -->
+    <style>
+      :root {
+        --ink: #10151c;
+        --ink-soft: #4a5568;
+        --ink-faint: #6b7688;
+        --paper: #ffffff;
+        --paper-tint: #f6f8fa;
+        --line: #dfe4ea;
+        --accent: #1f6feb;
+        --accent-soft: #eaf2fe;
+        --good: #1a7f4b;
+        --good-soft: #e8f5ee;
+        --warn-soft: #fdf6e3;
+        --warn-line: #e3c778;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial,
+          sans-serif;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #e6edf3;
+          --ink-soft: #a9b4c0;
+          --ink-faint: #8b95a3;
+          --paper: #0d1117;
+          --paper-tint: #151b23;
+          --line: #29313d;
+          --accent: #6ea8fe;
+          --accent-soft: #14243d;
+          --good: #59c98b;
+          --good-soft: #10261a;
+          --warn-soft: #26200f;
+          --warn-line: #6b5820;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        color: var(--ink);
+        background: var(--paper);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 60rem;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+      }
+
+      header {
+        border-bottom: 1px solid var(--line);
+        background: var(--paper-tint);
+        padding: 3.5rem 0 3rem;
+      }
+
+      h1 {
+        font-size: clamp(1.9rem, 4.5vw, 2.6rem);
+        margin: 0 0 0.4rem;
+        letter-spacing: -0.02em;
+      }
+
+      .tagline {
+        font-family: var(--mono);
+        font-size: 0.85rem;
+        color: var(--ink-faint);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin: 0 0 1.25rem;
+      }
+
+      .lede {
+        font-size: 1.15rem;
+        color: var(--ink-soft);
+        max-width: 46rem;
+        margin: 0 0 1.75rem;
+      }
+
+      .lede strong {
+        color: var(--ink);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+
+      .button {
+        display: inline-block;
+        padding: 0.6rem 1.1rem;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--paper);
+        color: var(--ink);
+        text-decoration: none;
+        font-size: 0.95rem;
+        font-weight: 500;
+      }
+
+      .button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      .button:hover {
+        border-color: var(--accent);
+      }
+
+      section {
+        padding: 3rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h2 {
+        font-size: 1.35rem;
+        margin: 0 0 0.5rem;
+        letter-spacing: -0.01em;
+      }
+
+      h2 + .sub {
+        color: var(--ink-faint);
+        margin: 0 0 1.5rem;
+        font-size: 0.95rem;
+      }
+
+      h3 {
+        font-size: 1rem;
+        margin: 1.5rem 0 0.4rem;
+      }
+
+      p {
+        margin: 0 0 1rem;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      figure {
+        margin: 1.5rem 0 0;
+      }
+
+      figure img {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      figcaption {
+        font-size: 0.85rem;
+        color: var(--ink-faint);
+        margin-top: 0.6rem;
+      }
+
+      .grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 1rem 1.1rem;
+        background: var(--paper-tint);
+      }
+
+      .card h3 {
+        margin: 0 0 0.35rem;
+        font-size: 0.95rem;
+      }
+
+      .card p {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--ink-soft);
+      }
+
+      pre {
+        background: var(--paper-tint);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 1rem;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        line-height: 1.55;
+        margin: 0;
+      }
+
+      .pair {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 48rem) {
+        .pair {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .pair h3 {
+        margin: 0 0 0.5rem;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--ink-faint);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+
+      .scroll-x {
+        overflow-x: auto;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 0.55rem 0.7rem;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--ink-faint);
+        font-weight: 600;
+      }
+
+      code {
+        font-family: var(--mono);
+        font-size: 0.87em;
+        background: var(--paper-tint);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0.05em 0.35em;
+      }
+
+      .pill {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--ink-soft);
+        background: var(--paper);
+      }
+
+      .pill.verified {
+        background: var(--good-soft);
+        border-color: var(--good);
+        color: var(--good);
+      }
+
+      ul {
+        margin: 0 0 1rem;
+        padding-left: 1.2rem;
+      }
+
+      li {
+        margin-bottom: 0.35rem;
+      }
+
+      .note {
+        background: var(--warn-soft);
+        border: 1px solid var(--warn-line);
+        border-radius: 8px;
+        padding: 0.9rem 1.1rem;
+        font-size: 0.9rem;
+        color: var(--ink-soft);
+      }
+
+      video {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: block;
+      }
+
+      footer {
+        padding: 2.5rem 0 3.5rem;
+        color: var(--ink-faint);
+        font-size: 0.88rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <h1>ToolLayer AI</h1>
+        <p class="tagline">Build once. Orchestrate anywhere.</p>
+        <p class="lede">
+          An AI application becomes useful when it can call real APIs — and dangerous at the same
+          moment. <strong>ToolLayer AI turns an OpenAPI document into a reviewed, versioned,
+          signed artifact, and gives a runtime the machinery to execute only that, under
+          policy.</strong>
+        </p>
+        <div class="actions">
+          <a class="button primary" href="#walkthrough">Watch the walkthrough</a>
+          <a class="button" href="https://github.com/its-spark-dev/toollayer-ai">Repository</a>
+          <a
+            class="button"
+            href="https://github.com/its-spark-dev/toollayer-ai/blob/main/docs/portfolio-case-study.md"
+            >Case study</a
+          >
+          <a
+            class="button"
+            href="https://github.com/its-spark-dev/toollayer-ai/blob/main/docs/threat-model.md"
+            >Threat model</a
+          >
+        </div>
+      </div>
+    </header>
+
+    <section id="problem">
+      <div class="wrap">
+        <h2>The problem, and the shape of the answer</h2>
+        <p class="sub">One paragraph each.</p>
+        <div class="pair">
+          <div>
+            <h3>Problem</h3>
+            <p>
+              Deriving a model's tool list from an API specification at startup leaves you with no
+              artifact: nothing to review, version, verify, or roll back. And the component
+              choosing the call is a language model, which produces plausible output rather than
+              correct output.
+            </p>
+          </div>
+          <div>
+            <h3>Solution</h3>
+            <p>
+              A <strong>Control Plane</strong> converts, reviews and publishes immutable connector
+              versions and deployment snapshots. A <strong>reference Runtime</strong> consumes one
+              snapshot and executes at most one governed tool call per request — validated,
+              authorized, and sent only to an allowlisted destination.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="transformation">
+      <div class="wrap">
+        <h2>One OpenAPI operation in, one governed tool out</h2>
+        <p class="sub">
+          Deterministic: the same document always produces the same tools, which is what makes the
+          published digest mean anything.
+        </p>
+        <figure>
+          <img
+            src="assets/00-hero.png"
+            alt="The Tool Control Plane's review console. On the left, the source OpenAPI operation
+            listSupportTickets with its status parameter referencing a shared TicketStatus schema.
+            On the right, the generated provider-neutral tool definition: tool_name
+            list_support_tickets, a closed JSON Schema Draft 2020-12 input schema, and the status
+            enum resolved inline from the reference."
+          />
+          <figcaption>
+            The <code>$ref</code> is resolved, the input schema is closed, and the model-facing
+            description is separated from the execution details the model never sees.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <div class="wrap">
+        <h2>Architecture</h2>
+        <p class="sub">
+          Two services that never import each other. They share one contract package and
+          communicate through a single read-only endpoint.
+        </p>
+        <div class="scroll-x">
+          <pre>
+  OpenAPI document
+        │
+        ▼
+  ┌─────────────────────────── Tool Control Plane ───────────────────────────┐
+  │  convert  →  review  →  publish (immutable version)  →  snapshot         │
+  │             (a human decides what becomes callable, and by whom)         │
+  └──────────────────────────────────┬──────────────────────────────────────┘
+                                     │  signed, digest-addressed snapshot
+                                     │  GET /internal/v1/…/snapshot  (ETag, 304)
+                                     ▼
+  ┌────────────────────── LLM Orchestration Runtime ─────────────────────────┐
+  │  discover → select → generate args → validate → authorize → execute      │
+  │             (one snapshot revision for the whole request)                │
+  └──────────────────────────────────┬──────────────────────────────────────┘
+                                     │  allowlisted origin, streamed and bounded,
+                                     │  no redirects, no proxies, no retries
+                                     ▼
+                              Upstream HTTP API</pre
+          >
+        </div>
+      </div>
+    </section>
+
+    <section id="walkthrough">
+      <div class="wrap">
+        <h2>The walkthrough</h2>
+        <p class="sub">
+          Recorded from the running console by <code>make capture</code>, which drives the real
+          application with Playwright. Nothing here is composited by hand.
+        </p>
+        <video controls preload="metadata" poster="assets/02-review-transformation.png">
+          <source src="assets/control-plane-walkthrough.webm" type="video/webm" />
+          Your browser cannot play WebM.
+          <a
+            href="https://github.com/its-spark-dev/toollayer-ai/blob/main/docs/assets/control-plane-walkthrough.webm"
+            >Download the walkthrough</a
+          >
+          instead.
+        </video>
+        <figure>
+          <img
+            src="assets/07-runtime-rejection.png"
+            alt="The runtime playground rejecting a tool call. A support-agent caller attempts the
+            restricted change_support_ticket_status tool and receives a role_not_permitted error,
+            with the decision trace showing the snapshot revision, the resolved tool, and the
+            policy evaluation step that refused it."
+          />
+          <figcaption>
+            Every request returns the trace of what the runtime decided, in order — including the
+            step that refused.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="boundary">
+      <div class="wrap">
+        <h2>The security boundary that matters most</h2>
+        <p class="sub">
+          The arguments come from a language model. The destination comes from a stored artifact.
+          Neither is trusted.
+        </p>
+        <div class="grid">
+          <div class="card">
+            <h3>Default-deny destinations</h3>
+            <p>
+              Exact origin matching, no wildcard, and every resolved address checked after DNS — so
+              a public name pointing at <code>169.254.169.254</code> is refused. Redirects are a
+              failure, not a hop.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Closed schemas, binding-driven requests</h3>
+            <p>
+              Arguments are validated against the published JSON Schema before anything is built,
+              and the request is assembled from the tool's bindings rather than from the arguments.
+              An undeclared field has nowhere to go.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Signed artifacts, not just hashed</h3>
+            <p>
+              The SHA-256 digest identifies content. An Ed25519 signature authenticates the
+              producer, so an attacker who rewrites a snapshot <em>and</em> its digest still cannot
+              make the runtime serve it.
+            </p>
+          </div>
+          <div class="card">
+            <h3>No loop</h3>
+            <p>
+              A tool result is summarized and the turn ends. Nothing in an upstream response
+              re-enters selection, so text inside a tool result cannot cause a second call.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="status">
+      <div class="wrap">
+        <h2>Verified status</h2>
+        <p class="sub">
+          Every claim on this page corresponds to something that runs. Counts are from the suite,
+          not from memory.
+        </p>
+        <div class="scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>Check</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>297 Python tests across 5 suites, 6 console tests</td>
+                <td><span class="pill verified">CI</span></td>
+              </tr>
+              <tr>
+                <td>Ruff lint and format, strict mypy over every package</td>
+                <td><span class="pill verified">CI</span></td>
+              </tr>
+              <tr>
+                <td>End-to-end demo, asserting each refusal's specific error code</td>
+                <td><span class="pill verified">CI</span></td>
+              </tr>
+              <tr>
+                <td>Wheel built, installed clean, every module and schema loaded</td>
+                <td><span class="pill verified">CI</span></td>
+              </tr>
+              <tr>
+                <td>Docker Compose topology built, started, and driven end to end</td>
+                <td><span class="pill verified">CI</span></td>
+              </tr>
+              <tr>
+                <td>pip-audit, npm audit, gitleaks over full history, CodeQL, SBOM</td>
+                <td><span class="pill verified">CI</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="technology">
+      <div class="wrap">
+        <h2>Technology</h2>
+        <p class="sub">Nothing here is present for keyword value.</p>
+        <p>
+          Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.0 with Alembic, JSON Schema Draft
+          2020-12, httpx, Ed25519 via <code>cryptography</code>. React 18 and TypeScript for the
+          admin console. Docker Compose for the local topology. <code>uv</code> for a locked,
+          reproducible dependency graph.
+        </p>
+      </div>
+    </section>
+
+    <section id="scope">
+      <div class="wrap">
+        <h2>What this is, and what it is not</h2>
+        <div class="note">
+          <p style="margin: 0 0 0.6rem">
+            <strong>This is a portfolio project, not a production system.</strong> The Control
+            Plane is the product; the Runtime is a reference implementation that exists to prove
+            the published artifact is usable and that the governance survives contact with model
+            output.
+          </p>
+          <p style="margin: 0">
+            Deliberately out of scope: real OAuth and end-user credential brokerage, multi-step
+            tool chaining, conversation memory, a hosted model provider, multi-tenancy, and TLS
+            termination. Caller identity in the demo topology is asserted by the host application
+            rather than verified — a signed-token mode exists and the runtime reports which one is
+            in force. Full dispositions are in
+            <a
+              href="https://github.com/its-spark-dev/toollayer-ai/blob/main/docs/feature-parity.md"
+              >feature parity</a
+            >
+            and the
+            <a
+              href="https://github.com/its-spark-dev/toollayer-ai/blob/main/docs/threat-model.md"
+              >threat model</a
+            >.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <p>
+          <a href="https://github.com/its-spark-dev/toollayer-ai">Repository</a> ·
+          <a
+            href="https://github.com/its-spark-dev/toollayer-ai/blob/main/docs/portfolio-case-study.md"
+            >Case study</a
+          >
+          ·
+          <a href="https://github.com/its-spark-dev/toollayer-ai/blob/main/docs/architecture.md"
+            >Architecture</a
+          >
+          ·
+          <a href="https://github.com/its-spark-dev/toollayer-ai/blob/main/docs/threat-model.md"
+            >Threat model</a
+          >
+          ·
+          <a href="https://github.com/its-spark-dev/toollayer-ai/blob/main/LICENSE">MIT</a>
+        </p>
+        <p>
+          Clean-room implementation. No employer code, configuration, data, or identifiers appear
+          anywhere in this repository.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

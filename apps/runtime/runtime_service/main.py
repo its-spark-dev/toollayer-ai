@@ -5,9 +5,11 @@ job is to prove that what the Control Plane publishes is actually usable, and th
 governance survives contact with model output. It has no conversation memory, no streaming,
 and no user interface beyond a small playground.
 
-Callers identify themselves with headers. In a real deployment that would be a verified
-identity from the host application; here it is explicitly asserted and explicitly documented
-as a demonstration simplification, so nobody mistakes it for authentication.
+Caller identity arrives one of two ways, and which one is in force is never implicit.
+``asserted_header`` reads ``x-toollayer-caller`` and ``x-toollayer-roles`` and believes them:
+a demonstration mode, not authentication. ``verified_token`` requires a signed caller token
+and derives the subject and roles from verified claims. ``/healthz`` reports the mode, so a
+runtime that is merely trusting its caller says so about itself.
 """
 
 from __future__ import annotations
@@ -60,6 +62,7 @@ def build_orchestrator(settings: RuntimeSettings) -> Orchestrator:
         base_url=settings.control_plane_url,
         service_token=settings.service_token,
         timeout_seconds=settings.read_timeout_seconds,
+        verification=settings.snapshot_verification_policy(),
     )
     store = SnapshotStore(
         client,
@@ -76,17 +79,34 @@ def build_orchestrator(settings: RuntimeSettings) -> Orchestrator:
 def caller_identity(
     subject: Annotated[str | None, Header(alias=CALLER_HEADER)] = None,
     roles: Annotated[str | None, Header(alias=ROLES_HEADER)] = None,
+    authorization: Annotated[str | None, Header(alias="authorization")] = None,
 ) -> CallerIdentity | None:
-    """Read the asserted caller identity from request headers.
+    """Establish the caller's identity under whichever mode is configured.
 
-    The host application is trusted to have authenticated the user before calling; the
-    runtime enforces what it asserts. That trust boundary is stated in
-    ``docs/threat-model.md`` rather than hidden behind a header that looks authoritative.
+    In ``asserted_header`` mode the host application is trusted to have authenticated the
+    user before calling, and the runtime enforces what it asserts. That is a trust boundary,
+    not an authentication step, and it is stated in ``docs/threat-model.md`` and reported by
+    ``/healthz`` rather than hidden behind a header that looks authoritative.
+
+    In ``verified_token`` mode the bearer token is verified — signature, issuer, audience,
+    expiry — and the assertion headers are refused outright.
     """
-    if subject is None and roles is None:
+    authenticator = get_settings().caller_authenticator()
+    return authenticator.identify(
+        bearer_token=_bearer(authorization),
+        asserted_subject=subject,
+        asserted_roles=roles,
+    )
+
+
+def _bearer(authorization: str | None) -> str | None:
+    """Extract a bearer token, without ever putting the header value in a message."""
+    if not authorization:
         return None
-    parsed = tuple(entry.strip() for entry in (roles or "").split(",") if entry.strip())
-    return CallerIdentity.of(subject or "anonymous", parsed)
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer":
+        return None
+    return token.strip() or None
 
 
 CallerDep = Annotated[CallerIdentity | None, Depends(caller_identity)]
@@ -98,7 +118,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
 
     app = FastAPI(
         title="ToolLayer AI — LLM Orchestration Runtime",
-        version="0.1.0",
+        version="0.2.0",
         summary=(
             "Consumes a governed deployment snapshot and executes validated, authorized tool "
             "calls. A reference implementation, not a chatbot product."
@@ -113,7 +133,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             allow_origins=list(settings.cors_origins),
             allow_credentials=False,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["content-type", CALLER_HEADER, ROLES_HEADER],
+            allow_headers=["content-type", "authorization", CALLER_HEADER, ROLES_HEADER],
         )
 
     @app.middleware("http")
@@ -155,9 +175,11 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             "status": "ok",
             "contract_version": CONTRACT_VERSION,
             "provider": "mock",
-            # Surfaced so a relaxed runtime identifies itself instead of looking the same as
-            # a locked-down one.
-            "destination_policy_relaxed": settings.relaxed_for_local_development,
+            # Every relaxation this runtime operates under, so a permissive deployment
+            # identifies itself instead of looking the same as a locked-down one. That
+            # includes whether caller identity is verified or merely asserted, and whether
+            # deployment snapshots are required to be signed.
+            **settings.security_posture,
         }
 
     @app.get("/readyz", tags=["operations"])
@@ -180,6 +202,11 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
                 "snapshot_revision": snapshot.revision,
                 "snapshot_id": snapshot.snapshot_id,
                 "tool_count": len(snapshot.tools),
+                # Which key authenticated the artifact being served, or null when it was
+                # accepted unsigned. Readiness that does not say this would let a runtime
+                # look identical whether or not it verified anything.
+                "snapshot_signed": snapshot.signed,
+                "snapshot_signing_key_id": snapshot.signing_key_id,
             },
         )
 
@@ -244,6 +271,8 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             "snapshot_id": snapshot.snapshot_id,
             "snapshot_digest": snapshot.digest,
             "tool_count": len(snapshot.tools),
+            "snapshot_signed": snapshot.signed,
+            "snapshot_signing_key_id": snapshot.signing_key_id,
         }
 
     return app

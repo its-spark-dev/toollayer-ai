@@ -1,8 +1,12 @@
 # Portfolio Strategy
 
-This document states what ToolLayer AI is trying to prove, to whom, and where the scope stops.
-It is public on purpose: a reviewer should be able to see that the project had a thesis before
-it had code.
+This is a working document: the scope decisions taken before any code was written, kept public
+so the reasoning is inspectable rather than reconstructed after the fact.
+
+It describes what the project set out to do and where it deliberately stopped. It is not an
+argument about what a reader should conclude — the repository, the tests, and
+`docs/portfolio-case-study.md` are where that case is made, and a reader who disagrees with the
+scope decisions here has everything needed to say so.
 
 ---
 
@@ -25,7 +29,7 @@ it had code.
 | Senior/staff engineer | Boundaries, contracts, failure handling, tests | `docs/architecture.md`, `packages/contracts`, `tests/security`, `tests/contract` |
 | Security-minded reviewer | Whether the safety claims are real | `docs/threat-model.md`, `packages/policy-engine`, `tests/security` |
 
-## 3. The 30-second recruiter impression
+## 3. The intended 30-second reading
 
 > This person builds the *platform* that lets AI applications call real APIs safely. They took
 > OpenAPI specifications, turned them into governed, versioned, provider-neutral tool
@@ -54,7 +58,8 @@ A reviewer who reads for ten minutes should conclude:
    enumerated set of rejections rather than best-effort guessing.
 2. **A project-defined canonical contract with two provider adapters**, which makes
    "provider-neutral" a testable claim instead of a slogan.
-3. **Immutable published versions and deployment snapshots**, verified by digest.
+3. **Immutable published versions and deployment snapshots**, addressed by a content digest
+   and authenticated by a producer signature.
 4. **A default-deny execution boundary** with SSRF protection, allowlisting, and schema
    validation — with security tests that demonstrate the rejections.
 5. **A visible governance step**: a human reviews the machine's proposal before anything is

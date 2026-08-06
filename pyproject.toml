@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "toollayer-ai"
-version = "0.1.0"
+version = "0.2.0"
 description = "An OpenAPI-to-tool control plane and reference runtime for safe, provider-neutral LLM orchestration."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,11 +18,19 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
     "jsonschema>=4.21",
+    # jsonschema's FormatChecker silently skips `date-time` unless this is installed, so
+    # without it "validated against the schema" quietly means "validated except for formats"
+    # — which is how a timestamp with no UTC offset passed validation for months.
+    "rfc3339-validator>=0.1.4",
     "PyYAML>=6.0",
     "SQLAlchemy>=2.0",
     "alembic>=1.13",
     "httpx>=0.27",
     "python-multipart>=0.0.9",
+    # Ed25519 for deployment-snapshot producer authentication and caller-token verification.
+    # The only cryptographic dependency, and it does the one job a hash cannot: prove who
+    # produced an artifact, not merely that its bytes are self-consistent.
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

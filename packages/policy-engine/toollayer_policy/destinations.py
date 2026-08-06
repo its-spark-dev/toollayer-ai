@@ -81,6 +81,63 @@ class SystemDnsResolver(DnsResolver):
         return tuple(addresses)
 
 
+@dataclass(frozen=True, slots=True)
+class _Authority:
+    """The parts of a URL authority this policy compares, once they are known good."""
+
+    scheme: str
+    host: str
+    port: int
+    has_userinfo: bool
+
+
+def _split_authority(value: str) -> _Authority:
+    """Parse a URL far enough to compare it, or raise ``ValueError``.
+
+    Every attribute access that can fail is inside this function. In particular
+    :attr:`urllib.parse.SplitResult.port` raises ``ValueError`` for a non-numeric or
+    out-of-range port, and it does so lazily — at the point of access, not at parse time. A
+    caller that reads ``.port`` in passing therefore gets an exception from a line that does
+    not look like parsing, which is how ``https://api.example.org:99999/x`` turns into an
+    unhandled 500 instead of a refusal. Centralizing the access means every caller gets a
+    structured failure and no caller has to remember.
+    """
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        raise ValueError("the URL could not be parsed") from None
+
+    scheme = parsed.scheme.lower()
+    if scheme not in _DEFAULT_PORTS:
+        raise ValueError("the URL must use http or https")
+
+    try:
+        # `.hostname` normalizes case and strips IPv6 brackets; `.port` validates the range.
+        # Both can raise on a malformed authority, so both are guarded together.
+        host = parsed.hostname
+        port = parsed.port
+        has_userinfo = bool(parsed.username or parsed.password)
+    except ValueError:
+        raise ValueError("the URL has a malformed authority") from None
+
+    if not host:
+        raise ValueError("the URL must name a host")
+    # A trailing dot makes a name fully qualified, and `api.example.org.` and
+    # `api.example.org` reach the same server. Stripping it keeps exact-origin comparison
+    # from being bypassed by a character DNS ignores. It is removed, never treated as a
+    # separate permitted form.
+    host = host.rstrip(".")
+    if not host:
+        raise ValueError("the URL must name a host")
+
+    return _Authority(
+        scheme=scheme,
+        host=host.lower(),
+        port=port or _DEFAULT_PORTS[scheme],
+        has_userinfo=has_userinfo,
+    )
+
+
 def normalize_origin(value: str) -> str:
     """Reduce a URL to a comparable ``scheme://host:port`` origin.
 
@@ -88,16 +145,10 @@ def normalize_origin(value: str) -> str:
     ``https://api.example.org:443`` compare equal, and the host is lowercased so that
     ``API.Example.org`` does not slip past an allowlist entry written in lowercase.
     """
-    parsed = urlsplit(value if "://" in value else f"https://{value}")
-    scheme = parsed.scheme.lower()
-    if scheme not in _DEFAULT_PORTS:
-        raise ValueError("an origin must use http or https")
-    if not parsed.hostname:
-        raise ValueError("an origin must name a host")
-    if parsed.username or parsed.password:
+    authority = _split_authority(value if "://" in value else f"https://{value}")
+    if authority.has_userinfo:
         raise ValueError("an origin must not contain userinfo")
-    port = parsed.port or _DEFAULT_PORTS[scheme]
-    return f"{scheme}://{parsed.hostname.lower()}:{port}"
+    return f"{authority.scheme}://{authority.host}:{authority.port}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,37 +211,36 @@ class DestinationPolicy:
         The order matters. Cheap structural checks run first so a malformed or obviously
         disallowed URL never causes a DNS lookup, which is itself an outbound side effect an
         attacker could use to probe.
+
+        Every parse failure — an unsupported scheme, a non-numeric or out-of-range port, a
+        broken IPv6 authority, an empty host — becomes ``destination_not_allowed``. A URL this
+        function cannot understand is one it must not authorize, and saying so as a domain
+        error is what keeps a malformed destination out of the unhandled-exception path.
         """
         try:
-            parsed = urlsplit(url)
+            authority = _split_authority(url)
         except ValueError:
+            # The message is deliberately uniform. Distinguishing "bad port" from "bad host"
+            # would let a caller map out the parser one malformed URL at a time.
             raise PolicyDenied(
                 ErrorCode.DESTINATION_NOT_ALLOWED, "the destination URL is not parseable"
             ) from None
 
-        scheme = parsed.scheme.lower()
-        if scheme not in _DEFAULT_PORTS:
-            raise PolicyDenied(
-                ErrorCode.DESTINATION_NOT_ALLOWED, "the destination must use http or https"
-            )
+        scheme = authority.scheme
         if scheme == "http" and not self.allow_plaintext_http:
             raise PolicyDenied(
                 ErrorCode.DESTINATION_NOT_ALLOWED,
                 "plaintext http destinations are disabled for this deployment",
             )
-        if parsed.username or parsed.password:
+        if authority.has_userinfo:
             raise PolicyDenied(
                 ErrorCode.DESTINATION_NOT_ALLOWED,
                 "the destination URL must not contain credentials",
             )
-        host = parsed.hostname
-        if not host:
-            raise PolicyDenied(
-                ErrorCode.DESTINATION_NOT_ALLOWED, "the destination URL must name a host"
-            )
 
-        port = parsed.port or _DEFAULT_PORTS[scheme]
-        origin = f"{scheme}://{host.lower()}:{port}"
+        host = authority.host
+        port = authority.port
+        origin = f"{scheme}://{host}:{port}"
         if not self.allowed_origins:
             raise PolicyDenied(
                 ErrorCode.DESTINATION_NOT_ALLOWED,
@@ -238,6 +288,13 @@ class DestinationPolicy:
                 ErrorCode.PRIVATE_ADDRESS_BLOCKED,
                 "the destination resolved to an address that could not be parsed",
             ) from None
+
+        # `::ffff:127.0.0.1` reaches the same host as `127.0.0.1`, but the IPv6 object does
+        # not report itself as loopback. Unwrapping the mapping first means every check below
+        # runs against the address the packet will actually go to, rather than against a
+        # representation of it.
+        if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped is not None:
+            parsed = parsed.ipv4_mapped
 
         if parsed.is_loopback:
             if not self.allow_loopback:

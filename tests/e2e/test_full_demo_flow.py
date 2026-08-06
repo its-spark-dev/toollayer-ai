@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from tests.conftest import ADMIN_HEADERS, DEMO_ORIGIN, SERVICE_HEADERS
 
-from toollayer_contracts import verify_digest
+from toollayer_contracts import SNAPSHOT_DIGEST_EXCLUDED, verify_digest
 from toollayer_contracts.errors import ErrorCode, ToolLayerError
 from toollayer_policy import CallerIdentity
 
@@ -25,7 +25,12 @@ LEAD = CallerIdentity.of("bao@example.org", ["support-lead"])
 
 
 def test_openapi_document_to_governed_execution(
-    control_plane, demo_api, support_api_document: str, outbound, stub_resolver
+    control_plane,
+    demo_api,
+    support_api_document: str,
+    outbound,
+    stub_resolver,
+    snapshot_verification,
 ) -> None:
     """Upload → analyze → review → publish → deploy → load → ask → execute → reject."""
     from runtime_service.orchestrator import Orchestrator
@@ -109,15 +114,21 @@ def test_openapi_document_to_governed_execution(
     assert served.status_code == 200
     document = served.json()
     assert document["snapshot_id"] == snapshot_summary["snapshot_id"]
-    assert verify_digest(
-        document, document["snapshot_digest"], exclude=("snapshot_id", "snapshot_digest")
-    )
+    assert verify_digest(document, document["snapshot_digest"], exclude=SNAPSHOT_DIGEST_EXCLUDED)
 
     store = SnapshotStore(
-        SnapshotClient(base_url="http://control-plane.invalid", service_token="unused-token-000"),
+        SnapshotClient(
+            base_url="http://control-plane.invalid",
+            service_token="unused-token-000",
+            verification=snapshot_verification,
+        ),
         deployment_key="demo-workspace",
     )
-    store.set(load_snapshot_document(document, etag=served.headers["etag"]))
+    store.set(
+        load_snapshot_document(
+            document, etag=served.headers["etag"], verification=snapshot_verification
+        )
+    )
     orchestrator = Orchestrator(
         store=store,
         provider=MockLLMProvider(),
@@ -203,7 +214,11 @@ def test_openapi_document_to_governed_execution(
 
 
 def test_the_runtime_serves_the_flow_over_http(
-    control_plane, published_snapshot: dict[str, Any], runtime_executor, outbound
+    control_plane,
+    published_snapshot: dict[str, Any],
+    runtime_executor,
+    outbound,
+    snapshot_verification,
 ) -> None:
     """The same flow through the runtime's own HTTP surface, as a client would use it."""
     from fastapi.testclient import TestClient
@@ -214,10 +229,14 @@ def test_the_runtime_serves_the_flow_over_http(
     from toollayer_mock_llm import MockLLMProvider
 
     store = SnapshotStore(
-        SnapshotClient(base_url="http://control-plane.invalid", service_token="unused-token-000"),
+        SnapshotClient(
+            base_url="http://control-plane.invalid",
+            service_token="unused-token-000",
+            verification=snapshot_verification,
+        ),
         deployment_key="demo-workspace",
     )
-    store.set(load_snapshot_document(published_snapshot))
+    store.set(load_snapshot_document(published_snapshot, verification=snapshot_verification))
     orchestrator = Orchestrator(store=store, provider=MockLLMProvider(), executor=runtime_executor)
 
     with TestClient(create_app(orchestrator)) as client:
