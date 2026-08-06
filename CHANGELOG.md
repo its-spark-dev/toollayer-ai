@@ -12,6 +12,52 @@ industry standard.
 
 Nothing yet.
 
+## [0.2.2] — 2026-08-06
+
+Contract version: **unchanged at 1.1.0.** Migration impact: **none.**
+
+A correctness fix to when the Control Plane commits. **A successful mutating response now
+means the transaction has committed before the response is sent.** Previously it could mean
+"will commit shortly", and a client that immediately read back what it had just written could
+be told the write did not exist.
+
+### Fixed
+
+- **Read-your-own-write on the admin API.** FastAPI runs the exit half of a `yield` dependency
+  after the response has already gone to the client, and that is where the request-scoped
+  session committed. So a `201` reached the caller, and the row became durable afterwards.
+
+  On a reused keep-alive connection this is invisible: the server finishes the whole request
+  cycle, teardown included, before reading the next request off that socket, so the two
+  requests serialize. Send the follow-up on a *different* connection and it is handled
+  independently, and can begin while the previous commit is still pending.
+
+  Measured against the unfixed code over 3,000 create-then-read pairs: **zero** failures
+  reusing the connection, **seven** on fresh ones. Two instances reached CI — one reported as
+  `no deployment exists with that key` immediately after that deployment was created, one as a
+  spurious `revision_conflict` immediately after a draft was reviewed. Both endpoints, one
+  cause.
+
+  Mutating routes now commit after the endpoint returns and before the response is built. This
+  is a change to *when* the commit happens, not a retry and not specific to any one database
+  backend.
+
+- **A failing commit is no longer invisible.** Because the commit now happens while the
+  response is still being assembled, a commit that raises produces a `500` instead of being
+  logged after a `201` the client has already accepted.
+
+### Changed
+
+- The end-to-end demo job prints each service's log inline when it fails, as well as uploading
+  it. An uploaded artifact does not survive a job re-run, and re-running is the first thing
+  anyone does with an intermittent failure.
+
+### Migration from 0.2.1
+
+**None.** No API shape, status code, error code, configuration key, contract document or
+accepted input changed. The only observable difference is that a success response is now a
+stronger statement than it was: the write is committed by the time you receive it.
+
 ## [0.2.1] — 2026-08-06
 
 Contract version: **unchanged at 1.1.0.** Migration impact: **none** — the set of documents
@@ -220,7 +266,8 @@ Initial public release. OpenAPI-to-tool conversion, human review, immutable publ
 and deployment snapshots, provider adapters, a governed execution boundary, and the reference
 runtime.
 
-[Unreleased]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/its-spark-dev/toollayer-ai/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/its-spark-dev/toollayer-ai/releases/tag/v0.1.0
