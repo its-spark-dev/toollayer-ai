@@ -84,20 +84,48 @@ def _parse_json(text: str) -> Any:
         raise InvalidDocumentError("the document is not well-formed JSON") from None
 
 
+#: Merge keys (``<<: *anchor``) are valid YAML that this ingester does not support. Resolving
+#: one means the reviewed document and the source document have different key sets, and the
+#: review console would show the merged result while the file on disk shows neither.
+_MERGE_TAG: Final = "tag:yaml.org,2002:merge"
+
+#: Base classes that can construct arbitrary Python objects. ``yaml.Loader``,
+#: ``yaml.FullLoader`` and ``yaml.UnsafeLoader`` all reach one of these.
+_UNSAFE_YAML_BASES: Final = frozenset(
+    {"Constructor", "FullConstructor", "UnsafeConstructor", "Loader", "FullLoader", "UnsafeLoader"}
+)
+
+
 class _NoDuplicateKeyLoader(yaml.SafeLoader):
     """SafeLoader that refuses duplicate mapping keys.
 
     ``yaml.SafeLoader`` already refuses arbitrary object construction, tags, and Python
     types. It does *not* refuse duplicate keys, which would let a document read one way in
     the review console and another way in a different YAML implementation.
+
+    Subclassing is what makes duplicate-key rejection possible, and it is also the thing that
+    could silently undo the safety: ``add_constructor`` on a subclass copies the parent's
+    constructor table, so a later edit registering the wrong tag would widen what this loader
+    builds without touching any line that looks security-relevant.
+    :func:`_assert_loader_is_safe` checks that at import time.
     """
 
 
 def _no_duplicate_mapping(loader: _NoDuplicateKeyLoader, node: yaml.MappingNode) -> Any:
     seen: set[Any] = set()
     for key_node, _ in node.value:
+        if key_node.tag == _MERGE_TAG:
+            raise InvalidDocumentError(
+                "YAML merge keys are not supported; write the merged keys explicitly"
+            )
         key = loader.construct_object(key_node, deep=True)
-        if key in seen:
+        try:
+            duplicate = key in seen
+        except TypeError:
+            # A mapping or sequence used as a key. Valid YAML, unrepresentable in JSON, and
+            # previously an unhandled TypeError that surfaced as a 500.
+            raise InvalidDocumentError("object keys must be scalars") from None
+        if duplicate:
             raise InvalidDocumentError("the document contains a duplicate mapping key")
         seen.add(key)
     return loader.construct_mapping(node, deep=True)
@@ -108,13 +136,66 @@ _NoDuplicateKeyLoader.add_constructor(
 )
 
 
+def _assert_loader_is_safe(loader: type[yaml.SafeLoader]) -> None:
+    """Refuse to import if the YAML loader could construct a Python object.
+
+    The properties checked here are the ones that make :func:`_parse_yaml` safe, asserted
+    rather than assumed. Each corresponds to a way the safety could be lost by an edit that
+    looks innocuous:
+
+    * an unsafe class entering the MRO — changing the base to ``yaml.Loader`` is one word;
+    * a ``python/*`` tag becoming constructible — ``add_constructor`` with the wrong tag;
+    * a multi-constructor being registered — that is how ``yaml.Loader`` reaches
+      ``!!python/object:`` and friends, by prefix rather than by exact tag.
+
+    A test asserting the same properties would catch the first two on the next CI run. Doing
+    it at import means a build carrying the mistake does not start at all.
+    """
+    offending = sorted({base.__name__ for base in loader.__mro__} & _UNSAFE_YAML_BASES)
+    if offending:
+        raise RuntimeError(f"the YAML loader inherits from unsafe base(s): {', '.join(offending)}")
+
+    python_tags = sorted(tag for tag in loader.yaml_constructors if "python" in str(tag))
+    if python_tags:
+        raise RuntimeError(f"the YAML loader can construct Python tags: {', '.join(python_tags)}")
+
+    if loader.yaml_multi_constructors:
+        raise RuntimeError(
+            "the YAML loader registers multi-constructors, which match tags by prefix and are "
+            "how arbitrary Python construction is reached"
+        )
+
+
+_assert_loader_is_safe(_NoDuplicateKeyLoader)
+
+
 def _parse_yaml(text: str) -> Any:
+    """Parse YAML with the one loader this module allows.
+
+    The loader is instantiated directly rather than passed to ``yaml.load(...)`` as a
+    ``Loader=`` argument. That call is the documented place where YAML deserialization goes
+    wrong — the loader is chosen at a distance, and every unsafe use of PyYAML looks exactly
+    like a safe one until you follow the argument. Here there is no argument to follow: the
+    class named on the next line is the only loader that can ever run, and
+    :func:`_assert_loader_is_safe` has already checked what it is able to build.
+    """
+    loader = _NoDuplicateKeyLoader(text)
     try:
-        return yaml.load(text, Loader=_NoDuplicateKeyLoader)
+        return loader.get_single_data()
     except InvalidDocumentError:
         raise
+    except RecursionError:
+        # PyYAML's *composer* is recursive even though its scanner and parser are not, so a
+        # document nested past CPython's stack limit dies inside the library rather than
+        # reaching the depth check in `_enforce_shape`. That took a 692-byte upload and made
+        # it a 500. Reported as the limit it actually hit.
+        raise DocumentTooLargeError("the document nests too deeply") from None
     except yaml.YAMLError:
         raise InvalidDocumentError("the document is not well-formed YAML") from None
+    finally:
+        # What `yaml.load` does in its own `finally`: releases the parser and scanner state
+        # rather than leaving it for the collector. PyYAML ships no annotations for it.
+        loader.dispose()  # type: ignore[no-untyped-call]
 
 
 def _enforce_shape(node: object, limits: SourceLimits) -> None:
