@@ -44,9 +44,10 @@ make provider neutrality testable, and request-body support widens what the conv
 again. A reader cannot verify the claim by comparison, because the thing to compare against is
 not public.
 
-**Accepted.** The claim rests on the documented method and on a pre-publication audit of the
-working tree and full Git history. It is stated as a claim, not proven — and the audit result
-is recorded in `docs/audits/v0.1.0-pre-publication.md` rather than asserted in a README line.
+**Accepted.** The claim rests on the method recorded in [`docs/CLEAN_ROOM_PLAN.md`](../CLEAN_ROOM_PLAN.md),
+which was committed before the implementation began, and on a scan of the working tree and
+every commit on every ref for internal identifiers before publication, which found none. It is
+stated as a claim, not proven: what it would be proven against is not public.
 
 ## Enforcement
 

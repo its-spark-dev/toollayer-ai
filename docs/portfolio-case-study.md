@@ -95,7 +95,7 @@ no change. OpenAI strict function calling requires every declared property to be
 so an optional argument must be widened to accept `null`. That is **not lossless**: the
 projected schema accepts a value the canonical schema does not.
 
-The resolution is the part worth explaining in an interview. The normalization is *reversible*:
+The resolution is the part worth spelling out. The normalization is *reversible*:
 the runtime strips the `null` placeholders and validates against the **unmodified** canonical
 schema. The canonical schema, never the projection, decides what executes — and the round trip
 is asserted in `tests/contract`. An undeclared argument is deliberately *not* stripped, so

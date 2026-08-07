@@ -464,10 +464,12 @@ contract design, immutable versioning, service-boundary design, and security eng
 untrusted model output. The design reasoning — what was traded away and why — is written up as a
 [case study](docs/portfolio-case-study.md).
 
-Two working documents sit behind it, for anyone who wants the process rather than the product:
-the scope decisions taken before any code was written
-([`docs/PORTFOLIO_STRATEGY.md`](docs/PORTFOLIO_STRATEGY.md)) and the audits of what was actually
-verified at each version ([`docs/audits/`](docs/audits/v0.2.0-hardening.md)).
+What was built, simplified, and deliberately left out is set out in
+[`docs/feature-parity.md`](docs/feature-parity.md), with the reasoning behind each decision in
+the [ADRs](docs/adr/0001-monorepo.md) and the [threat model](docs/threat-model.md). What changed
+and what it was verified against at each version is in the
+[release notes](docs/releases/v0.2.2.md) and the [changelog](CHANGELOG.md); the checks
+themselves run in CI on every push.
 
 ## Releases
 
@@ -481,5 +483,7 @@ in the [changelog](CHANGELOG.md).
 ## License
 
 [MIT](LICENSE). Every runtime dependency is under a permissive license (MIT, BSD-3-Clause, or
-Apache-2.0); the inventory is in [`docs/audits/v0.1.0-pre-publication.md`](docs/audits/v0.1.0-pre-publication.md) §7,
-and CI regenerates it on every run.
+Apache-2.0). The inventory is generated rather than maintained by hand: `make sbom` produces a
+CycloneDX bill of materials from the locked dependency graph, and CI regenerates and uploads it
+on every run — so it describes the dependencies that are actually pinned, not the ones that
+were pinned when someone last wrote a table.
