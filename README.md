@@ -464,10 +464,10 @@ contract design, immutable versioning, service-boundary design, and security eng
 untrusted model output. The design reasoning — what was traded away and why — is written up as a
 [case study](docs/portfolio-case-study.md).
 
-Two working documents sit behind it, for anyone who wants the process rather than the product:
-the scope decisions taken before any code was written
-([`docs/PORTFOLIO_STRATEGY.md`](docs/PORTFOLIO_STRATEGY.md)) and the audits of what was actually
-verified at each version ([`docs/audits/`](docs/audits/v0.2.0-hardening.md)).
+What was built, simplified, and deliberately left out is set out in
+[`docs/feature-parity.md`](docs/feature-parity.md), with the reasoning behind each decision in
+the [ADRs](docs/adr/0001-monorepo.md) and the [threat model](docs/threat-model.md). What was
+actually verified at each version is in [`docs/audits/`](docs/audits/v0.2.0-hardening.md).
 
 ## Releases
 

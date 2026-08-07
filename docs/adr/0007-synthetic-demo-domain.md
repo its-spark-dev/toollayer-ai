@@ -40,7 +40,7 @@ surface. A reviewer might read the demo API as representative of the project's e
 depth rather than as a fixture.
 
 **Mitigation.** The demo API is deliberately the least interesting code in the repository, and
-`docs/PORTFOLIO_STRATEGY.md` says where the attention should go.
+`docs/feature-parity.md` records which parts of the system the demo domain is there to exercise, and which it deliberately does not.
 
 ## Note on the OpenAPI document
 

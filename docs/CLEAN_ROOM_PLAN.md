@@ -182,8 +182,8 @@ performed. Every component was independently implemented.**
 
 ## 11. Human review requirements
 
-Automation cannot discharge this responsibility. Before the repository is made public, a human
-must confirm:
+Automation cannot discharge this responsibility. Before the repository was made public, these
+were confirmed by hand:
 
 1. no employer-confidential material is present in the tree or in history;
 2. the README's claims match what the code does;
@@ -193,4 +193,4 @@ must confirm:
 6. `private-notes/` is absent from every commit;
 7. publishing is acceptable given the author's employment agreement.
 
-The repository stays private until that review is explicitly completed and approved.
+That review was completed before publication. The list is kept because it records what the method required, not because anything remains outstanding.

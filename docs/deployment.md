@@ -279,4 +279,4 @@ tears it down. `KEEP_UP=1 make demo-docker` leaves it running so you can open th
 - **Single-tenant.**
 
 These are honest gaps in a portfolio project, not an oversight to be discovered later.
-`docs/PORTFOLIO_STRATEGY.md` records which were deliberate scope decisions.
+`docs/feature-parity.md` records which of these were deliberate scope decisions and why.
