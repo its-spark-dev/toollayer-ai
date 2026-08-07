@@ -173,8 +173,8 @@ performed. Every component was independently implemented.**
 
 | Risk | Handling |
 |---|---|
-| Accidental inclusion of an internal identifier | Automated scan over the working tree *and* full Git history before publication; results recorded in `docs/audits/v0.1.0-pre-publication.md` |
-| Committed secrets | Secret scan across all commits; `.env.example` contains only placeholders |
+| Accidental inclusion of an internal identifier | Automated scan for employer, product, host and personal-name patterns over the working tree *and* every commit on every ref, run before publication |
+| Committed secrets | Secret scan across all commits, re-run over full history by a CI job on every push; `.env.example` contains only placeholders |
 | Dependency licensing | Dependency license inventory reviewed before publication |
 | Structural similarity being mistaken for copying | This document, `docs/feature-parity.md`, and the ADRs state the boundary explicitly |
 | Overstated claims | Limitations are stated in the README, the architecture document, and the case study |
