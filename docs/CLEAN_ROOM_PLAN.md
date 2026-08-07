@@ -178,7 +178,7 @@ performed. Every component was independently implemented.**
 | Dependency licensing | Dependency license inventory reviewed before publication |
 | Structural similarity being mistaken for copying | This document, `docs/feature-parity.md`, and the ADRs state the boundary explicitly |
 | Overstated claims | Limitations are stated in the README, the architecture document, and the case study |
-| Private notes leaking | `private-notes/` is in `.gitignore` and its absence is verified in the pre-publication review |
+| Private notes leaking | `private-notes/` is in `.gitignore`, and CI verifies that it is absent from the tracked tree and Git history |
 
 ## 11. Human review requirements
 
