@@ -21,7 +21,6 @@ concurrency:
 
 jobs:
   analyze:
-    name: Analyze ${{ matrix.language }}
     runs-on: ubuntu-latest
     permissions:
       # The only jobs in this repository that need more than `contents: read`, and they need
@@ -32,7 +31,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ["python", "javascript-typescript"]
+        include:
+          - language: python
+            display_name: CodeQL / Python
+          - language: javascript-typescript
+            display_name: CodeQL / JavaScript-TypeScript
+
+    name: ${{ matrix.display_name }}
 
     steps:
       - uses: actions/checkout@v4

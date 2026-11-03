@@ -151,11 +151,19 @@ def _assert_loader_is_safe(loader: type[yaml.SafeLoader]) -> None:
     A test asserting the same properties would catch the first two on the next CI run. Doing
     it at import means a build carrying the mistake does not start at all.
     """
-    offending = sorted({base.__name__ for base in loader.__mro__} & _UNSAFE_YAML_BASES)
+    offending = sorted(
+        {
+            name
+            for base in loader.__mro__
+            if (name := base.__name__) is not None and name in _UNSAFE_YAML_BASES
+        }
+    )
     if offending:
         raise RuntimeError(f"the YAML loader inherits from unsafe base(s): {', '.join(offending)}")
 
-    python_tags = sorted(tag for tag in loader.yaml_constructors if "python" in str(tag))
+    python_tags = sorted(
+        tag for tag in loader.yaml_constructors if tag is not None and "python" in str(tag)
+    )
     if python_tags:
         raise RuntimeError(f"the YAML loader can construct Python tags: {', '.join(python_tags)}")
 
