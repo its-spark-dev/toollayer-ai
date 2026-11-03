@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   python:
-    name: Lint, typecheck, and test
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -121,7 +121,7 @@ jobs:
           echo "no signing material in the console bundle"
 
   package:
-    name: Build and install the distribution
+    name: Package
     runs-on: ubuntu-latest
 
     steps:
@@ -368,7 +368,7 @@ jobs:
           retention-days: 7
 
   supply-chain:
-    name: Dependency and secret scanning
+    name: Supply chain
     runs-on: ubuntu-latest
 
     steps:
